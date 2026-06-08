@@ -3,8 +3,8 @@ import {
   serializeWebSnapshot,
   serializeMobileSnapshot
 } from '../src/snapshot.js'
-import type { AccessibilityNode } from '../src/accessibility-tree.js'
-import type { JSONElement } from '../src/locators/types.js'
+import type { AccessibilityNode } from '@wdio/devtools-core/element-types.js'
+import type { JSONElement } from '@wdio/devtools-core/locators/types.js'
 
 // ---------------------------------------------------------------------------
 // serializeWebSnapshot

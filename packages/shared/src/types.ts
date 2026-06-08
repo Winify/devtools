@@ -359,3 +359,74 @@ export interface SuiteStats {
    *  use this to drive feature-level filtering. */
   featureFile?: string
 }
+
+// ─── Playwright-compatible v8 trace event types ─────────────────────────────
+
+/**
+ * Initial context-options event written once at the beginning of a trace.
+ * Equivalent to Playwright's context-options event (version 8).
+ */
+export interface TraceContextOptionsEvent {
+  version: 8
+  type: 'context-options'
+  origin: 'library'
+  libraryName: string
+  libraryVersion: string
+  browserName: string
+  platform: 'darwin' | 'linux' | 'windows'
+  wallTime: number
+  monotonicTime: 0
+  sdkLanguage: 'javascript'
+  title: string
+  contextId: string
+  options: { viewport: { width: number; height: number } }
+}
+
+/**
+ * Written immediately before a framework command executes.
+ * Linked to its matching after event via callId.
+ */
+export interface TraceBeforeActionEvent {
+  type: 'before'
+  callId: string
+  startTime: number
+  class: string
+  method: string
+  pageId?: string
+  params: Record<string, unknown>
+  title: string
+  parentId?: string
+}
+
+/**
+ * Written immediately after a framework command completes (or fails).
+ * Linked to its matching before event via callId.
+ */
+export interface TraceAfterActionEvent {
+  type: 'after'
+  callId: string
+  endTime: number
+  error?: { message: string }
+}
+
+/**
+ * Written after each command to link the visual state (screenshot,
+ * element snapshot) to the page timeline. The sha1 / elements / snapshot
+ * fields are filenames in the trace's resources/ directory — not inline data.
+ */
+export interface TraceScreencastFrameEvent {
+  type: 'screencast-frame'
+  pageId: string
+  sha1: string
+  elements?: string
+  snapshot?: string
+  width: number
+  height: number
+  timestamp: number
+}
+
+export type TraceEvent =
+  | TraceContextOptionsEvent
+  | TraceBeforeActionEvent
+  | TraceAfterActionEvent
+  | TraceScreencastFrameEvent

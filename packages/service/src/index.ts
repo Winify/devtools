@@ -47,9 +47,11 @@ export default class DevToolsHookService implements Services.ServiceInstance {
   #bidiListenersSetup = false
   #screencastRecorder?: ScreencastRecorder
   #screencastOptions?: ScreencastOptions
+  #captureElements: boolean
 
   constructor(serviceOptions: ServiceOptions = {}) {
     this.#screencastOptions = serviceOptions.screencast
+    this.#captureElements = serviceOptions.captureElements ?? false
   }
 
   /**
@@ -86,6 +88,7 @@ export default class DevToolsHookService implements Services.ServiceInstance {
     this.#sessionCapturer = new SessionCapturer(
       wdioCaps['wdio:devtoolsOptions']
     )
+    this.#sessionCapturer.setCaptureElements(this.#captureElements)
 
     /**
      * Block until injection completes BEFORE any test commands

@@ -5,7 +5,7 @@
  * text files that LLMs can consume without any parsing.
  */
 
-import type { AccessibilityNode } from './accessibility-tree.js'
+import type { AccessibilityNode } from './element-types.js'
 import type { JSONElement } from './locators/types.js'
 import { parseAndroidBounds, parseIOSBounds } from './locators/xml-parsing.js'
 import {
@@ -585,14 +585,8 @@ function suppressTagOnlyChildren(nodes: MobileFlatNode[]): void {
 
 /** Layout roles that carry no semantic meaning by themselves. */
 const NOISY_ROLES = new Set([
-  'FrameLayout',
-  'LinearLayout',
-  'ViewGroup',
-  'RelativeLayout',
-  'View',
-  'CardView',
-  'ConstraintLayout',
-  'ScrollView'
+  'FrameLayout', 'LinearLayout', 'ViewGroup', 'RelativeLayout',
+  'View', 'CardView', 'ConstraintLayout', 'ScrollView'
 ])
 
 /**
@@ -629,7 +623,7 @@ function renderMobileNodes(nodes: MobileFlatNode[]): string[] {
       continue
     }
 
-    // Off-screen containers rendered as collapsed placedersen
+    // Off-screen containers rendered as collapsed placeholders
     if (node.isInViewport === false && !node.isInteractive) {
       lines.push(`${indent}⋯ ${node.name} (off-screen)`)
       continue

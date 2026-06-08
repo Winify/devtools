@@ -1,3 +1,8 @@
+// WDIO-dependent element extraction wrappers.
+// Framework-agnostic types, serializers, and locator generation are duplicated
+// in @wdio/devtools-core for consumers that don't have a WebdriverIO dependency.
+// When core gains a build step, this package will import from core instead.
+
 export { getInteractableBrowserElements } from './browser-elements.js'
 export type {
   BrowserElementInfo,

@@ -58,6 +58,15 @@ export interface ServiceOptions {
    * uses CDP push mode; all other browsers fall back to screenshot polling.
    */
   screencast?: ScreencastOptions
+  /**
+   * Capture per-step element snapshots via @wdio/elements (default: false).
+   * When enabled, every captured command includes a flat interactable element
+   * list and an LLM-readable text snapshot of the viewport.
+   *
+   * Best-effort — timeouts and failures are silently swallowed; the command
+   * result is never blocked by element capture.
+   */
+  captureElements?: boolean
 }
 
 declare namespace WebdriverIO {

@@ -58,6 +58,7 @@
     "@types/ws": "^8.18.1",
     "@wdio/devtools-core": "workspace:^",
     "@wdio/devtools-shared": "workspace:^",
+    "@wdio/elements": "workspace:^",
     "@wdio/globals": "9.27.2",
     "@wdio/protocols": "9.27.2",
     "typescript": "6.0.3",

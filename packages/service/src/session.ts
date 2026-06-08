@@ -19,12 +19,18 @@ import {
   type CapturedPerformancePayload,
   type LogSource
 } from '@wdio/devtools-core'
+import { getElements, getBrowserAccessibilityTree } from '@wdio/elements'
+import {
+  serializeWebSnapshot,
+  serializeMobileSnapshot
+} from '@wdio/devtools-core/element-snapshot'
 import type { CommandLog, LogLevel } from './types.js'
 
 const log = logger('@wdio/devtools-service:SessionCapturer')
 
 export class SessionCapturer extends SessionCapturerBase {
   #isScriptInjected = false
+  #captureElements = false
   #pendingNetworkRequests = new Map<
     string,
     {
@@ -40,6 +46,11 @@ export class SessionCapturer extends SessionCapturerBase {
     super(devtoolsOptions)
     this.patchConsole()
     this.patchStreams()
+  }
+
+  /** Enable per-step element snapshot capture via @wdio/elements. */
+  setCaptureElements(enabled: boolean): void {
+    this.#captureElements = enabled
   }
 
   protected override onWsError(err: unknown): void {
@@ -132,6 +143,12 @@ export class SessionCapturer extends SessionCapturerBase {
         `failed to capture screenshot: ${(screenshotError as Error).message}`
       )
     }
+
+    // Per-step element snapshot — best-effort, never blocks the command result.
+    if (this.#captureElements) {
+      await this.#captureElementSnapshot(browser, commandLogEntry)
+    }
+
     this.commandsLog.push(commandLogEntry)
     this.sendUpstream('commands', [commandLogEntry])
     // Capture trace + perf on commands that could trigger a page transition.
@@ -198,6 +215,75 @@ export class SessionCapturer extends SessionCapturerBase {
       functionDeclaration
     })
     log.info('✓ Script injected successfully')
+  }
+
+  /**
+   * Capture per-step element snapshots using @wdio/elements.
+   * Best-effort — failures are silently swallowed so a slow or broken
+   * element capture never masks the actual command result.
+   */
+  // eslint-disable-next-line max-lines-per-function -- best-effort capture with nested timeout guards, splitting would scatter the error-swallowing logic
+  async #captureElementSnapshot(
+    browser: WebdriverIO.Browser,
+    entry: CommandLog
+  ): Promise<void> {
+    try {
+      const isMobile = Boolean(
+        browser.isMobile || browser.isAndroid || browser.isIOS
+      )
+
+      // Unified element list with 5-second timeout.
+      const elementsResult = await Promise.race([
+        getElements(browser, {
+          inViewportOnly: true,
+          includeBounds: true
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('getElements timeout')), 5000)
+        )
+      ])
+
+      // Text snapshot generation — web uses a11y tree, mobile uses the page-source tree.
+      let snapshotText: string | undefined
+      try {
+        if (isMobile) {
+          if (elementsResult.tree) {
+            const platform = browser.isAndroid
+              ? ('android' as const)
+              : ('ios' as const)
+            snapshotText = serializeMobileSnapshot(elementsResult.tree, {
+              platform
+            })
+          }
+        } else {
+          const nodes = await Promise.race([
+            getBrowserAccessibilityTree(browser, { inViewportOnly: true }),
+            new Promise<never>((_, reject) =>
+              setTimeout(
+                () => reject(new Error('accessibility tree timeout')),
+                3000
+              )
+            )
+          ])
+          let title: string | undefined
+          try {
+            title = await browser.getTitle()
+          } catch {
+            // getTitle can fail if the page hasn't loaded yet
+          }
+          snapshotText = serializeWebSnapshot(nodes, { title })
+        }
+      } catch {
+        // Snapshot generation failures must not block element capture.
+      }
+
+      ;(entry as unknown as Record<string, unknown>).elements = {
+        elements: elementsResult.elements,
+        ...(snapshotText ? { snapshotText } : {})
+      }
+    } catch {
+      // getElements timeout or session teardown — non-fatal.
+    }
   }
 
   async #captureTrace(browser: WebdriverIO.Browser) {
