@@ -50,14 +50,6 @@ export default defineConfig({
         if (isPrivateWorkspaceDep) {
           return false
         }
-        // Inline mobile locator deps pulled in transitively via
-        // @wdio/devtools-core/element-snapshot (mobile snapshot path).
-        const isTransitiveCoreDep =
-          id === '@xmldom/xmldom' || id === 'xpath' ||
-          id.startsWith('@xmldom/')
-        if (isTransitiveCoreDep) {
-          return false
-        }
         // Any relative import (`./foo.js` from top-level, OR `../foo.js`
         // from a subfolder like utils/) and any absolute path under src/
         // must be bundled, not externalized. The `../` case was missing

@@ -9,36 +9,35 @@
     "directory": "packages/core"
   },
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
     },
     "./*": {
-      "types": "./dist/*.d.ts",
-      "import": "./dist/*.js"
+      "types": "./src/*.ts",
+      "default": "./src/*.ts"
     },
     "./locators": {
-      "types": "./dist/locators/index.d.ts",
-      "import": "./dist/locators/index.js"
+      "types": "./src/locators/index.ts",
+      "default": "./src/locators/index.ts"
     },
     "./element-snapshot": {
-      "types": "./dist/element-snapshot.d.ts",
-      "import": "./dist/element-snapshot.js"
+      "types": "./src/element-snapshot.ts",
+      "default": "./src/element-snapshot.ts"
     },
     "./element-types": {
-      "types": "./dist/element-types.d.ts",
-      "import": "./dist/element-types.js"
+      "types": "./src/element-types.ts",
+      "default": "./src/element-types.ts"
     },
     "./element-scripts": {
-      "types": "./dist/element-scripts.d.ts",
-      "import": "./dist/element-scripts.js"
+      "types": "./src/element-scripts.ts",
+      "default": "./src/element-scripts.ts"
     }
   },
-  "types": "./dist/index.d.ts",
-  "files": ["dist"],
+  "types": "./src/index.ts",
   "scripts": {
-    "build": "tsup",
     "lint": "eslint ."
   },
   "license": "MIT",
@@ -51,7 +50,6 @@
     "@types/ws": "^8.18.1",
     "@wdio/devtools-script": "workspace:*",
     "@wdio/devtools-shared": "workspace:^",
-    "stacktrace-parser": "^0.1.11",
-    "tsup": "^8.5.1"
+    "stacktrace-parser": "^0.1.11"
   }
 }
