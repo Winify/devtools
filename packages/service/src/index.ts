@@ -114,18 +114,21 @@ export default class DevToolsHookService implements Services.ServiceInstance {
     }
 
     /**
-     * propagate session metadata at the beginning of the session
+     * propagate session metadata at the beginning of the session.
+     * Skip on mobile — Appium doesn't support execute/sync.
      */
-    browser
-      .execute(() => window.visualViewport)
-      .then((viewport) =>
-        this.#sessionCapturer.sendUpstream('metadata', {
-          viewport: viewport || undefined,
-          type: this.captureType,
-          options: browser.options,
-          capabilities: browser.capabilities as Capabilities.W3CCapabilities
-        })
-      )
+    if (!browser.isMobile && !browser.isAndroid && !browser.isIOS) {
+      browser
+        .execute(() => window.visualViewport)
+        .then((viewport) =>
+          this.#sessionCapturer.sendUpstream('metadata', {
+            viewport: viewport || undefined,
+            type: this.captureType,
+            options: browser.options,
+            capabilities: browser.capabilities as Capabilities.W3CCapabilities
+          })
+        )
+    }
   }
 
   // The method signature is corrected to use W3CCapabilities

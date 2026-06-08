@@ -321,9 +321,6 @@ importers:
       stacktrace-parser:
         specifier: ^0.1.11
         version: 0.1.11
-      tsup:
-        specifier: ^8.5.1
-        version: 8.5.1(@microsoft/api-extractor@7.58.7(@types/node@25.9.1))(jiti@2.7.0)(postcss@8.5.15)(tsx@4.22.4)(typescript@6.0.3)(yaml@2.9.0)
 
   packages/elements:
     dependencies:
@@ -509,6 +506,9 @@ importers:
       '@wdio/types':
         specifier: 9.27.2
         version: 9.27.2
+      '@xmldom/xmldom':
+        specifier: ^0.9.8
+        version: 0.9.10
       devtools:
         specifier: ^8.42.0
         version: 8.42.0
@@ -530,6 +530,9 @@ importers:
       ws:
         specifier: ^8.21.0
         version: 8.21.0
+      xpath:
+        specifier: ^0.0.34
+        version: 0.0.34
     devDependencies:
       '@types/babel__core':
         specifier: ^7.20.5

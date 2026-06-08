@@ -41,10 +41,7 @@ export function generateTranscript(
   title?: string
 ): string {
   const wallTimeISO = new Date(startWallTime).toISOString()
-  const lines: string[] = [
-    `# ${title ?? 'Session'} — ${wallTimeISO}`,
-    ''
-  ]
+  const lines: string[] = [`# ${title ?? 'Session'} — ${wallTimeISO}`, '']
 
   // Only include commands that map to traceable actions
   const captured = commands.filter(
@@ -134,15 +131,44 @@ export async function writeTraceDirectory(
   const pageId = `page@${opts.sessionId.slice(0, 8)}`
   const contextId = `context@${opts.sessionId.slice(0, 8)}`
 
+  const caps = (opts.metadata.capabilities ?? {}) as Record<string, unknown>
+  const platformName = String(
+    caps.platformName ?? caps['appium:platformName'] ?? ''
+  )
+  const isAndroid = platformName.toLowerCase() === 'android'
+  const isIOS = platformName.toLowerCase() === 'ios'
+  const isMobile = isAndroid || isIOS
+
+  // Match MCP's context-options: mobile uses 'chromium' + device title, browser uses real name
+  const ctxBrowserName = isMobile
+    ? 'chromium'
+    : ((caps.browserName as string) ?? 'chromium')
+
+  let ctxTitle: string
+  let ctxViewport: { width: number; height: number }
+  if (isMobile) {
+    const deviceName = String(
+      caps['appium:deviceName'] ?? caps.deviceName ?? 'device'
+    )
+    const platformVersion = String(
+      caps['appium:platformVersion'] ?? caps.platformVersion ?? ''
+    )
+    ctxTitle = `${isAndroid ? 'android' : 'ios'} - ${deviceName}${platformVersion ? ` (${platformVersion})` : ''}`
+    ctxViewport = isAndroid
+      ? { width: 412, height: 915 }
+      : { width: 390, height: 844 }
+  } else {
+    ctxTitle = (caps.browserName as string) ?? opts.title ?? 'Session'
+    ctxViewport = { width: 1920, height: 1080 }
+  }
+
   const ctxEvent: TraceContextOptionsEvent = {
     version: 8,
     type: 'context-options',
     origin: 'library',
     libraryName: '@wdio/devtools-service',
     libraryVersion: '0.0.0',
-    browserName:
-      (opts.metadata.capabilities as Record<string, unknown> | undefined)
-        ?.browserName as string ?? 'chromium',
+    browserName: ctxBrowserName,
     platform:
       process.platform === 'darwin'
         ? 'darwin'
@@ -152,27 +178,52 @@ export async function writeTraceDirectory(
     wallTime: opts.startWallTime,
     monotonicTime: 0,
     sdkLanguage: 'javascript',
-    title: opts.title ?? 'Session',
+    title: ctxTitle,
     contextId,
-    options: { viewport: { width: 1920, height: 1080 } }
+    options: { viewport: ctxViewport }
   }
 
   const events: TraceEvent[] = [ctxEvent]
 
-  // Emit initial screencast-frame (timestamp=0) if the first command has a
-  // screenshot — represents the page state before any interaction.
-  const firstScreenshot = opts.commands.find((c) => c.screenshot)
-  if (firstScreenshot?.screenshot && firstScreenshot.timestamp) {
-    const ts = firstScreenshot.timestamp
+  // Emit initial screencast-frame (timestamp=0) — the first command's visual
+  // state represents the page before any interaction. Include elements and
+  // snapshot if the command has them.
+  const firstCmd = opts.commands.find((c) => c.screenshot)
+  if (firstCmd?.screenshot && firstCmd.timestamp) {
+    const ts = firstCmd.timestamp
     const pngName = resourceName(pageId, ts, '.png')
     await fs.writeFile(
       path.join(dir, 'resources', pngName),
-      Buffer.from(firstScreenshot.screenshot, 'base64')
+      Buffer.from(firstCmd.screenshot, 'base64')
     )
+
+    let elementsFile: string | undefined
+    let snapshotFile: string | undefined
+    const elementsData = (firstCmd as unknown as Record<string, unknown>)
+      .elements as { elements: unknown; snapshotText?: string } | undefined
+    if (elementsData) {
+      elementsFile = resourceName(pageId, ts, '-elements.json')
+      await fs.writeFile(
+        path.join(dir, 'resources', elementsFile),
+        JSON.stringify(elementsData.elements),
+        'utf8'
+      )
+      if (elementsData.snapshotText) {
+        snapshotFile = resourceName(pageId, ts, '-snapshot.txt')
+        await fs.writeFile(
+          path.join(dir, 'resources', snapshotFile),
+          elementsData.snapshotText,
+          'utf8'
+        )
+      }
+    }
+
     events.push({
       type: 'screencast-frame',
       pageId,
       sha1: pngName,
+      ...(elementsFile ? { elements: elementsFile } : {}),
+      ...(snapshotFile ? { snapshot: snapshotFile } : {}),
       width: 1280,
       height: 720,
       timestamp: 0
@@ -311,7 +362,7 @@ export async function writeTraceDirectory(
   const transcript = generateTranscript(
     opts.commands,
     opts.startWallTime,
-    opts.title
+    ctxTitle
   )
   await fs.writeFile(path.join(dir, 'transcript.md'), transcript, 'utf8')
 
