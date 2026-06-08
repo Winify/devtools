@@ -585,8 +585,14 @@ function suppressTagOnlyChildren(nodes: MobileFlatNode[]): void {
 
 /** Layout roles that carry no semantic meaning by themselves. */
 const NOISY_ROLES = new Set([
-  'FrameLayout', 'LinearLayout', 'ViewGroup', 'RelativeLayout',
-  'View', 'CardView', 'ConstraintLayout', 'ScrollView'
+  'FrameLayout',
+  'LinearLayout',
+  'ViewGroup',
+  'RelativeLayout',
+  'View',
+  'CardView',
+  'ConstraintLayout',
+  'ScrollView'
 ])
 
 /**

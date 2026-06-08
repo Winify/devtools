@@ -337,8 +337,8 @@ export default class DevToolsHookService implements Services.ServiceInstance {
         suites,
         startWallTime: this.#sessionCapturer.startWallTime,
         title: String(
-          (this.#browser.capabilities as Record<string, unknown>)
-            .browserName ?? 'Session'
+          (this.#browser.capabilities as Record<string, unknown>).browserName ??
+            'Session'
         )
       })
       log.info(`Trace directory written to ${traceDir}`)

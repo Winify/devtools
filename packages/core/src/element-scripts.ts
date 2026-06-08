@@ -240,7 +240,10 @@ export function accessibilityTreeScript(inViewportOnly: boolean): string {
  * filters by visibility and (optionally) viewport containment. Each element
  * gets a computed accessible name and a unique CSS selector.
  */
-export function elementsScript(includeBounds: boolean, inViewportOnly: boolean): string {
+export function elementsScript(
+  includeBounds: boolean,
+  inViewportOnly: boolean
+): string {
   return `(function () {
     var interactableSelectors = [
       'a[href]', 'button', 'input:not([type="hidden"])', 'select', 'textarea',
@@ -366,7 +369,7 @@ export function elementsScript(includeBounds: boolean, inViewportOnly: boolean):
         selector: getSelector(htmlEl),
         isInViewport: isInVp
       }
-      ${includeBounds ? `entry.boundingBox = { x: rect.x + window.scrollX, y: rect.y + window.scrollY, width: rect.width, height: rect.height }` : ''}
+      ${includeBounds ? 'entry.boundingBox = { x: rect.x + window.scrollX, y: rect.y + window.scrollY, width: rect.width, height: rect.height }' : ''}
       elements.push(entry)
     })
     return elements

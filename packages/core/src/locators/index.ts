@@ -218,6 +218,9 @@ function processElement(element: JSONElement, ctx: ProcessingContext): void {
 
     ctx.results.push(transformed)
   } catch (error) {
+    // Core is logger-free; console.error provides the required
+    // "enough detail to debug" per the error-handling convention.
+    // A single bad element never fails the entire page-source walk.
     console.error(`[processElement] Error at path ${element.path}:`, error)
   }
 }
@@ -250,6 +253,8 @@ export function generateAllElementLocators(
   const sourceJSON = xmlToJSON(sourceXML)
 
   if (!sourceJSON) {
+    // Core is logger-free; console.error is the only signal that XML
+    // parsing failed — the caller receives an empty result silently otherwise.
     console.error(
       '[generateAllElementLocators] Failed to parse page source XML'
     )

@@ -340,6 +340,10 @@ export class SessionCapturer extends SessionCapturerBase {
         // Snapshot generation failures must not block element capture.
       }
 
+      // Attach element snapshot data to the command log entry so trace
+      // writers can correlate screenshots ↔ elements ↔ snapshots.  The
+      // CommandLog interface doesn't carry this field — it's injected here
+      // and consumed by writeTraceDirectory.
       ;(entry as unknown as Record<string, unknown>).elements = {
         elements: elementsResult.elements,
         ...(snapshotText ? { snapshotText } : {})

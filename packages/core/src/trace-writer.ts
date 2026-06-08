@@ -199,6 +199,8 @@ export async function writeTraceDirectory(
 
     let elementsFile: string | undefined
     let snapshotFile: string | undefined
+    // CommandLog.screenshot is typed; elements/snapshotText are injected by
+    // SessionCapturer at runtime and don't exist on the CommandLog interface.
     const elementsData = (firstCmd as unknown as Record<string, unknown>)
       .elements as { elements: unknown; snapshotText?: string } | undefined
     if (elementsData) {
@@ -289,6 +291,8 @@ export async function writeTraceDirectory(
       endTime: startTime
     }
     if (cmd.error) {
+      // TraceAfterActionEvent.error exists at runtime but isn't on the
+      // discriminated union because it's conditional on the error branch.
       ;(afterEvt as unknown as Record<string, unknown>).error = {
         message:
           typeof cmd.error === 'object' && 'message' in cmd.error
@@ -313,6 +317,7 @@ export async function writeTraceDirectory(
       let elementsFile: string | undefined
       let snapshotFile: string | undefined
 
+      // Same injected elements data as above — not on the CommandLog type.
       const elData = (cmd as unknown as Record<string, unknown>).elements as
         | { elements: unknown; snapshotText?: string }
         | undefined
