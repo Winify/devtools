@@ -72,7 +72,7 @@ export interface ServiceOptions {
    * (default: false). Use when only trace recording is needed — no
    * debug dashboard, no extra Chrome window, no backend server.
    */
-  noDashboard?: boolean
+  disableDebugger?: boolean
   /**
    * Trace output format (default 'single-json').
    * - 'single-json': one monolithic wdio-trace-{sessionId}.json (existing behavior).

@@ -33,7 +33,7 @@ export const config: WebdriverIO.Config = {
       'devtools',
       {
         captureElements: true,
-        noDashboard: true,
+        disableDebugger: true,
         traceFormat: 'ndjson-directory'
       }
     ]

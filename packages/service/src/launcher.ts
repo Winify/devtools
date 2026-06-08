@@ -110,8 +110,8 @@ export class DevToolsAppLauncher {
   }
 
   async onPrepare(_: never, caps: ExtendedCapabilities[]) {
-    if (this.#options.noDashboard) {
-      log.info('Dashboard disabled — skipping backend and Chrome window')
+    if (this.#options.disableDebugger) {
+      log.info('Debugger disabled — skipping backend and Chrome window')
       return
     }
     try {
