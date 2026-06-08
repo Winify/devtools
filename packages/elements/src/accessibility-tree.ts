@@ -1,27 +1,11 @@
 /**
  * Browser accessibility tree
  * Single browser.execute() call: DOM walk → flat accessibility node list
- *
- * NOTE: This script runs in browser context via browser.execute()
- * It must be self-contained with no external dependencies
  */
 
-export interface AccessibilityNode {
-  role: string
-  name: string
-  selector: string
-  depth: number
-  level: number | string
-  disabled: string
-  checked: string
-  expanded: string
-  selected: string
-  pressed: string
-  required: string
-  readonly: string
-  /** Whether the element's bounding rect intersects the viewport. */
-  isInViewport?: boolean
-}
+import type { AccessibilityNode } from '@wdio/devtools-core/element-types'
+
+export type { AccessibilityNode }
 
 const accessibilityTreeScript = (inViewportOnly: boolean) =>
   (function () {

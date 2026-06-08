@@ -6,22 +6,12 @@
  * It must be self-contained with no external dependencies
  */
 
-export interface BrowserElementInfo {
-  tagName: string
-  name: string // computed accessible name (ARIA spec)
-  type: string
-  value: string
-  href: string
-  selector: string
-  isInViewport: boolean
-  boundingBox?: { x: number; y: number; width: number; height: number }
-}
+import type {
+  BrowserElementInfo,
+  GetBrowserElementsOptions
+} from '@wdio/devtools-core/element-types'
 
-export interface GetBrowserElementsOptions {
-  includeBounds?: boolean
-  /** Only return elements whose bounding rect intersects the viewport (default true). */
-  inViewportOnly?: boolean
-}
+export type { BrowserElementInfo, GetBrowserElementsOptions }
 
 const elementsScript = (includeBounds: boolean, inViewportOnly: boolean) =>
   (function () {

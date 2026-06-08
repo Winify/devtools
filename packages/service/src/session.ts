@@ -42,6 +42,12 @@ export class SessionCapturer extends SessionCapturerBase {
     }
   >()
 
+  /** Session start wall time for transcript + trace event timestamps. */
+  readonly startWallTime = Date.now()
+
+  /** Last find-element selector — carried forward to the next element command. */
+  #lastSelector: string | undefined
+
   constructor(devtoolsOptions: { hostname?: string; port?: number } = {}) {
     super(devtoolsOptions)
     this.patchConsole()
@@ -147,6 +153,63 @@ export class SessionCapturer extends SessionCapturerBase {
     // Per-step element snapshot — best-effort, never blocks the command result.
     if (this.#captureElements) {
       await this.#captureElementSnapshot(browser, commandLogEntry)
+    }
+
+    const cmd = String(command)
+
+    // Track last find-element selector so element commands (click, setValue, …)
+    // carry a human-readable selector in trace events even though WDIO doesn't
+    // pass it in their args.
+    if (
+      cmd === '$' ||
+      cmd === '$$' ||
+      cmd === 'findElement' ||
+      cmd === 'findElements'
+    ) {
+      const sel = args[0]
+      if (typeof sel === 'string' && sel.length > 0) {
+        this.#lastSelector = sel
+      }
+    }
+
+    // For element-scoped commands without meaningful args, inject the last
+    // selector so the trace event shows what element was acted upon.
+    if (
+      this.#lastSelector &&
+      (cmd === 'click' ||
+        cmd === 'doubleClick' ||
+        cmd === 'moveTo' ||
+        cmd === 'scrollIntoView' ||
+        cmd === 'touchAction' ||
+        cmd === 'dragAndDrop' ||
+        cmd === 'getText' ||
+        cmd === 'getAttribute' ||
+        cmd === 'clearValue' ||
+        cmd === 'waitForExist' ||
+        cmd === 'waitForDisplayed' ||
+        cmd === 'waitForEnabled' ||
+        cmd === 'waitForClickable')
+    ) {
+      // Only inject if args don't already identify the element
+      const hasNoSelector =
+        args.length === 0 ||
+        (args.length === 1 &&
+          typeof args[0] === 'object' &&
+          args[0] !== null &&
+          !Array.isArray(args[0]) &&
+          Object.keys(args[0] as object).some((k) => k.startsWith('element-')))
+      if (hasNoSelector) {
+        commandLogEntry.args = [this.#lastSelector]
+      }
+    }
+
+    // For setValue / addValue, prepend the last selector so trace params
+    // carry both {selector, value} like the MCP set_value tool does.
+    if (this.#lastSelector && (cmd === 'setValue' || cmd === 'addValue')) {
+      const hasNoSelector = args.length >= 1 && typeof args[0] !== 'object'
+      if (hasNoSelector) {
+        commandLogEntry.args = [this.#lastSelector, ...args]
+      }
     }
 
     this.commandsLog.push(commandLogEntry)

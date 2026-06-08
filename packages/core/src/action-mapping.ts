@@ -58,20 +58,59 @@ export function mapCommandToAction(
 }
 
 /**
+ * Extract a human-readable label from a selector string.
+ * Mirrors the MCP's extractSelectorLabel in tool-mapping.ts.
+ */
+function extractSelectorLabel(selector: string): string {
+  // UiAutomator: android=new UiSelector().text("Label")
+  const uia = selector.match(
+    /\.(?:text|description|textContains)\("([^"]+)"\)/
+  )
+  if (uia) return uia[1]
+
+  // Accessibility ID: ~label
+  if (selector.startsWith('~')) return selector.slice(1)
+
+  // iOS predicate: label == "X" or name == "X"
+  const pred = selector.match(/(?:label|name|value)\s*==\s*"([^"]+)"/)
+  if (pred) return pred[1]
+
+  // XPath attribute: [@text="X"] [@label="X"]
+  const xp = selector.match(
+    /@(?:text|label|name|content-desc)="([^"]+)"/
+  )
+  if (xp) return xp[1]
+
+  // CSS: tag*=Text → "Text"
+  const cssText = selector.match(/\*="([^"]+)"/)
+  if (cssText) return cssText[1]
+
+  // CSS: #id → "id"
+  const cssId = selector.match(/^#([\w-]+)/)
+  if (cssId) return `#${cssId[1]}`
+
+  // CSS: [attr="value"]
+  const cssAttr = selector.match(/\[(\w+)="([^"]+)"\]/)
+  if (cssAttr) return cssAttr[2]
+
+  return selector
+}
+
+/**
  * Format a human-readable action title for transcript and trace display.
- * Truncates long values to 80 characters.
  */
 export function formatActionTitle(
   action: TraceAction,
   args: unknown[],
   params?: Record<string, unknown>
 ): string {
-  const firstArg = args[0] ?? params?.selector
-  if (firstArg === undefined) {
+  // Prefer an explicit selector param, then the first positional arg
+  const raw = params?.selector ?? args[0]
+  if (raw === undefined) {
     return `${action.class}.${action.method}()`
   }
-  const label = (
-    typeof firstArg === 'object' ? JSON.stringify(firstArg) : String(firstArg)
+  const label = extractSelectorLabel(
+    typeof raw === 'object' ? JSON.stringify(raw) : String(raw)
   ).slice(0, 80)
   return `${action.class}.${action.method}("${label}")`
 }

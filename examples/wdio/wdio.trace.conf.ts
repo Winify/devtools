@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { browser } from '@wdio/globals'
 
 const __dirname = path.resolve(path.dirname(new URL(import.meta.url).pathname))
 
@@ -35,7 +36,9 @@ export const config: WebdriverIO.Config = {
     [
       'devtools',
       {
-        captureElements: true
+        captureElements: true,
+        noDashboard: true,
+        traceFormat: 'ndjson-directory'
       }
     ]
   ],

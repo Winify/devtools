@@ -67,6 +67,19 @@ export interface ServiceOptions {
    * result is never blocked by element capture.
    */
   captureElements?: boolean
+  /**
+   * Skip launching the devtools dashboard backend and Chrome UI window
+   * (default: false). Use when only trace recording is needed — no
+   * debug dashboard, no extra Chrome window, no backend server.
+   */
+  noDashboard?: boolean
+  /**
+   * Trace output format (default 'single-json').
+   * - 'single-json': one monolithic wdio-trace-{sessionId}.json (existing behavior).
+   * - 'ndjson-directory': trace-{sessionId}/ directory with NDJSON trace events,
+   *   separate screenshot/element files, and transcript.md.
+   */
+  traceFormat?: 'single-json' | 'ndjson-directory'
 }
 
 declare namespace WebdriverIO {

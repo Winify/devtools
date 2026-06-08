@@ -3,7 +3,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 
 import logger from '@wdio/logger'
-import { errorMessage } from '@wdio/devtools-core'
+import { errorMessage, writeTraceDirectory } from '@wdio/devtools-core'
 import { SevereServiceError } from 'webdriverio'
 import type { Services, Reporters, Capabilities, Options } from '@wdio/types'
 import type { WebDriverCommands } from '@wdio/protocols'
@@ -48,10 +48,12 @@ export default class DevToolsHookService implements Services.ServiceInstance {
   #screencastRecorder?: ScreencastRecorder
   #screencastOptions?: ScreencastOptions
   #captureElements: boolean
+  #traceFormat: 'single-json' | 'ndjson-directory'
 
   constructor(serviceOptions: ServiceOptions = {}) {
     this.#screencastOptions = serviceOptions.screencast
     this.#captureElements = serviceOptions.captureElements ?? false
+    this.#traceFormat = serviceOptions.traceFormat ?? 'single-json'
   }
 
   /**
@@ -309,28 +311,52 @@ export default class DevToolsHookService implements Services.ServiceInstance {
 
     const outputDir = this.#outputDir
     const { ...options } = this.#browser.options
-    const traceLog: TraceLog = {
-      mutations: this.#sessionCapturer.mutations,
-      logs: this.#sessionCapturer.traceLogs,
-      consoleLogs: this.#sessionCapturer.consoleLogs,
-      networkRequests: this.#sessionCapturer.networkRequests,
-      metadata: {
-        ...this.#sessionCapturer.metadata!,
-        type: this.captureType,
-        options,
-        capabilities: this.#browser.capabilities as Capabilities.W3CCapabilities
-      },
-      commands: this.#sessionCapturer.commandsLog,
-      sources: Object.fromEntries(this.#sessionCapturer.sources),
-      suites: this.#testReporters.map((reporter) => reporter.report)
+    const metadata = {
+      ...this.#sessionCapturer.metadata!,
+      type: this.captureType,
+      options,
+      capabilities: this.#browser.capabilities as Capabilities.W3CCapabilities
     }
+    const commands = this.#sessionCapturer.commandsLog
+    const networkRequests = this.#sessionCapturer.networkRequests
+    const sources = Object.fromEntries(this.#sessionCapturer.sources)
+    const suites = this.#testReporters.map((reporter) => reporter.report)
 
-    const traceFilePath = path.join(
-      outputDir,
-      `wdio-trace-${this.#browser.sessionId}.json`
-    )
-    await fs.writeFile(traceFilePath, JSON.stringify(traceLog))
-    log.info(`DevTools trace saved to ${traceFilePath}`)
+    if (this.#traceFormat === 'ndjson-directory') {
+      const traceDir = await writeTraceDirectory({
+        outputDir,
+        sessionId: this.#browser.sessionId,
+        commands,
+        networkRequests,
+        metadata,
+        consoleLogs: this.#sessionCapturer.consoleLogs,
+        sources,
+        suites,
+        startWallTime: this.#sessionCapturer.startWallTime,
+        title: String(
+          (this.#browser.capabilities as Record<string, unknown>)
+            .browserName ?? 'Session'
+        )
+      })
+      log.info(`Trace directory written to ${traceDir}`)
+    } else {
+      const traceLog: TraceLog = {
+        mutations: this.#sessionCapturer.mutations,
+        logs: this.#sessionCapturer.traceLogs,
+        consoleLogs: this.#sessionCapturer.consoleLogs,
+        networkRequests,
+        metadata,
+        commands,
+        sources,
+        suites
+      }
+      const traceFilePath = path.join(
+        outputDir,
+        `wdio-trace-${this.#browser.sessionId}.json`
+      )
+      await fs.writeFile(traceFilePath, JSON.stringify(traceLog))
+      log.info(`DevTools trace saved to ${traceFilePath}`)
+    }
 
     // Clean up console patching
     this.#sessionCapturer.cleanup()

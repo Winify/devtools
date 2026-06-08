@@ -1,7 +1,6 @@
 // WDIO-dependent element extraction wrappers.
-// Framework-agnostic types, serializers, and locator generation are duplicated
-// in @wdio/devtools-core for consumers that don't have a WebdriverIO dependency.
-// When core gains a build step, this package will import from core instead.
+// Framework-agnostic types, serializers, scripts, and locator generation live
+// in @wdio/devtools-core and are re-exported here for backward compatibility.
 
 export { getInteractableBrowserElements } from './browser-elements.js'
 export type {
@@ -23,4 +22,4 @@ export type { VisibleElementsResult } from './get-elements.js'
 
 export { serializeWebSnapshot, serializeMobileSnapshot } from './snapshot.js'
 export type { WebSnapshotOptions, MobileSnapshotOptions } from './snapshot.js'
-export type { JSONElement } from './locators/types.js'
+export type { JSONElement } from './locators/index.js'

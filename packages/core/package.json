@@ -9,45 +9,49 @@
     "directory": "packages/core"
   },
   "type": "module",
-  "sideEffects": false,
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./*": {
-      "types": "./src/*.ts",
-      "default": "./src/*.ts"
+      "types": "./dist/*.d.ts",
+      "import": "./dist/*.js"
     },
     "./locators": {
-      "types": "./src/locators/index.ts",
-      "default": "./src/locators/index.ts"
+      "types": "./dist/locators/index.d.ts",
+      "import": "./dist/locators/index.js"
     },
     "./element-snapshot": {
-      "types": "./src/element-snapshot.ts",
-      "default": "./src/element-snapshot.ts"
+      "types": "./dist/element-snapshot.d.ts",
+      "import": "./dist/element-snapshot.js"
     },
     "./element-types": {
-      "types": "./src/element-types.ts",
-      "default": "./src/element-types.ts"
+      "types": "./dist/element-types.d.ts",
+      "import": "./dist/element-types.js"
     },
     "./element-scripts": {
-      "types": "./src/element-scripts.ts",
-      "default": "./src/element-scripts.ts"
+      "types": "./dist/element-scripts.d.ts",
+      "import": "./dist/element-scripts.js"
     }
   },
-  "types": "./src/index.ts",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
   "scripts": {
+    "build": "tsup",
     "lint": "eslint ."
   },
   "license": "MIT",
+  "dependencies": {
+    "@xmldom/xmldom": "^0.9.8",
+    "ws": "^8.21.0",
+    "xpath": "^0.0.34"
+  },
   "devDependencies": {
     "@types/ws": "^8.18.1",
     "@wdio/devtools-script": "workspace:*",
     "@wdio/devtools-shared": "workspace:^",
-    "@xmldom/xmldom": "^0.9.8",
     "stacktrace-parser": "^0.1.11",
-    "ws": "^8.21.0",
-    "xpath": "^0.0.34"
+    "tsup": "^8.5.1"
   }
 }

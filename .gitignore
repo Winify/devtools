@@ -25,7 +25,9 @@ dist-ssr
 /*.ts
 /*.json
 *.tgz
-example/wdio-*.json
+example*/**/wdio-*.json
+examples/**/*.apk
+examples/**/trace-*/**
 
 # pnpm state, cache, logs, and debug files
 /packages/**/*.mjs
