@@ -447,8 +447,9 @@ export interface BaseDevToolsOptions {
    *  scrubbable playback in the trace player — not just one frame per action.
    *  The dense frames are added alongside the per-action frames (which carry the
    *  DOM snapshots). Runs the screencast recorder (CDP push on Chrome, polling
-   *  elsewhere). Default true. Set `false` to record only one frame per action
-   *  (smaller trace, no continuous recorder). Only applies in trace mode. */
+   *  elsewhere). Default false: the trace carries one frame per action. Set
+   *  `true` to add the dense frames (larger trace, continuous recorder). Only
+   *  applies in trace mode. */
   filmstrip?: boolean
   /** Write the `devtools-artifacts-<sessionId>.json` manifest next to the trace
    *  — the generic index reporters/CI consume to discover produced artifacts.

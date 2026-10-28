@@ -170,7 +170,7 @@ class SeleniumDevToolsPlugin {
       traceFormat: options.traceFormat ?? 'zip',
       traceGranularity: options.traceGranularity ?? 'session',
       tracePolicy: options.tracePolicy ?? 'on',
-      filmstrip: options.filmstrip ?? true,
+      filmstrip: options.filmstrip ?? false,
       screenshot: options.screenshot ?? 'off',
       video: options.video ?? 'off',
       emitArtifactsManifest: options.emitArtifactsManifest

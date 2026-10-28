@@ -22,9 +22,8 @@ import type {
 } from './types.js'
 
 /** The already-defaulted options the recorder decision is made from — read the
- *  resolved `filmstrip`/`video`, never the raw `options.filmstrip`, or a
- *  default-on filmstrip leaves the recorder inert while the plugin's own options
- *  claim it is running. */
+ *  resolved `filmstrip`/`video`, never the raw `options.filmstrip`, which may be
+ *  unset while the plugin's own options already hold its resolved value. */
 export interface ScreencastResolutionInput {
   mode: DevToolsMode
   filmstrip: boolean

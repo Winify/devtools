@@ -70,9 +70,9 @@ export class ScreencastLifecycle {
     }
   }
 
-  /** Filmstrip defaults ON in trace mode; explicit `filmstrip: false` opts out. */
+  /** Filmstrip defaults OFF; explicit `filmstrip: true` opts in. */
   #filmstripOn(): boolean {
-    return this.#ctx.options.filmstrip ?? true
+    return this.#ctx.options.filmstrip ?? false
   }
 
   /** Record a screencast this session? Live mode: `screencast.enabled`. Trace

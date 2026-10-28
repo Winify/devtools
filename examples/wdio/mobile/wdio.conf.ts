@@ -67,8 +67,7 @@ export const config: WebdriverIO.Config = {
         // and no zip instead of a zip and no window — so the mode is logged.
         mode: MODE,
         traceGranularity: 'session',
-        // Filmstrip is OPT-IN on mobile, unlike the desktop demos, purely on
-        // cost: the poller takes a screenshot every interval and a real device
+        // Filmstrip is OPT-IN, purely on cost: the poller takes a screenshot every interval and a real device
         // screenshot is slow — a 3-command run against an emulator took 45 s.
         //
         // NOT because it crashes the UiAutomator2 instrumentation. That crash

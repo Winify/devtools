@@ -138,11 +138,7 @@ class NightwatchDevToolsPlugin {
 
   constructor(options: DevToolsOptions = {}) {
     const mode = options.mode ?? 'live'
-    // Resolve the defaults ONCE and gate on the resolved values: reading the raw
-    // `options.filmstrip === true` left the default-on filmstrip inert unless a
-    // config set it explicitly, so the recorder never started while
-    // `this.options.filmstrip` claimed it was on.
-    const filmstrip = options.filmstrip ?? true
+    const filmstrip = options.filmstrip ?? false
     const video = options.video ?? 'off'
     const screencast = resolveScreencastOptions({
       mode,

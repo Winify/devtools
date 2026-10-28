@@ -334,7 +334,7 @@ DevTools.configure({ mode: 'trace', traceGranularity: 'test' })
 **Default:** `'zip'` (a single `trace-<sessionId>.zip`). `'ndjson-directory'` writes the same `trace.trace` + `trace.network` + `resources/` layout unpacked into `trace-<id>/`, skipping the unzip step for scripted / agentic consumers. Trace mode only.
 
 #### `filmstrip` — dense scrubbable screencast in the trace
-**Default:** `true`. Records a continuous screencast (CDP push on Chrome, screenshot polling elsewhere) into the trace so the player timeline scrubs frame-by-frame. On by default in trace mode; set `false` to record just one frame per action. Trace mode only.
+**Default:** `false`. Records a continuous screencast (CDP push on Chrome, screenshot polling elsewhere) into the trace so the player timeline scrubs frame-by-frame. Off by default: the trace carries one frame per action, which per-action screenshots already provide, and the dense frames grow the zip noticeably. Set `true` to opt in. Trace mode only.
 
 ```javascript
 DevTools.configure({ mode: 'trace', filmstrip: true })
@@ -405,7 +405,7 @@ The trace uses a portable NDJSON schema, so the same `.zip` (or `ndjson-director
 | `traceFormat` | `'zip' \| 'ndjson-directory'` | `'zip'` | Trace artifact layout — a single `.zip` or an unpacked directory. Trace mode only. |
 | `traceGranularity` | `'session' \| 'spec' \| 'test'` | `'session'` | One trace per session / spec file / test. `'test'` writes each to `test-results/<spec>-<title>-<browser>[-retryN]/trace.zip`. Trace mode only. |
 | `tracePolicy` | `'on' \| 'retain-on-failure' \| 'retain-on-first-failure' \| 'on-first-retry' \| 'on-all-retries' \| 'retain-on-failure-and-retries'` | `'on'` | Which traces to keep. Pairs with `traceGranularity: 'test'`. Trace mode only. |
-| `filmstrip` | `boolean` | `true` | Record a dense, continuous screencast into the trace for frame-by-frame scrubbing in the player. Trace mode only. |
+| `filmstrip` | `boolean` | `false` | Record a dense, continuous screencast into the trace for frame-by-frame scrubbing in the player. Trace mode only. |
 | `screenshot` | `'off' \| 'on' \| 'only-on-failure'` | `'off'` | Trace mode + `traceGranularity: 'test'`. Per-test screenshot, attached inline to Allure (`image/png`) via `allure-js-commons` when an Allure runner adapter is active. |
 | `video` | `'off' \| TraceRetentionPolicy` | `'off'` | Trace mode + `traceGranularity: 'test'`. Per-test screencast video, retained per the given policy, attached inline to Allure (`video/webm`) via `allure-js-commons` when an Allure runner adapter is active. |
 | `emitArtifactsManifest` | `boolean` | auto | Write the `devtools-artifacts-<sessionId>.json` manifest — the generic index reporters/CI consume to discover produced artifacts — next to the trace. Off by default; **auto-enables** when an `allure-js-commons` runtime is active (the same signal the inline Allure attach uses). Set explicitly to force on/off. Trace mode only. |

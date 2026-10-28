@@ -10,13 +10,10 @@ function resolved(options: DevToolsOptions): Required<DevToolsOptions> {
 }
 
 describe('filmstrip recorder gate', () => {
-  it('starts the recorder when filmstrip is left at its default', () => {
-    // Regression: the gate read the RAW `options.filmstrip === true`, so an
-    // unset filmstrip left the recorder off while the resolved options claimed
-    // it was on — no dense frames unless a config said `filmstrip: true`.
+  it('leaves the recorder off when filmstrip is left at its default', () => {
     const opts = resolved({ mode: 'trace' })
-    expect(opts.filmstrip).toBe(true)
-    expect(opts.screencast.enabled).toBe(true)
+    expect(opts.filmstrip).toBe(false)
+    expect(opts.screencast.enabled).not.toBe(true)
   })
 
   it('starts the recorder when filmstrip is set explicitly', () => {
