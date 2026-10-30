@@ -466,6 +466,7 @@ export class SessionCapturer extends SessionCapturerBase {
       return
     }
     const before = this.lastDocumentOrigin
+    let born: number | undefined
     const replaced = await pollUntilReady(
       async () => {
         const now = await this.documentOrigin(browser)
@@ -473,6 +474,7 @@ export class SessionCapturer extends SessionCapturerBase {
           return false
         }
         this.lastDocumentOrigin = now
+        born = now
         return before === undefined || now !== before
       },
       { attempts: 5, intervalMs: 150 }
@@ -491,7 +493,9 @@ export class SessionCapturer extends SessionCapturerBase {
       timestamp !== undefined &&
       queued &&
       before !== undefined &&
+      born !== undefined &&
       queued.timestamp >= timestamp &&
+      queued.timestamp < born &&
       queued.timestamp !== this.#lastRecapturedAt
     ) {
       this.#lastRecapturedAt = queued.timestamp
@@ -500,7 +504,8 @@ export class SessionCapturer extends SessionCapturerBase {
         runner: this.runner,
         native: this.isNativeAppSession,
         snapshots: this.actionSnapshots,
-        queued
+        queued,
+        isLatest: () => this.#lastPageCapture === queued
       })
     }
     // captureTrace's own recovery injects into the fresh document and re-drains,

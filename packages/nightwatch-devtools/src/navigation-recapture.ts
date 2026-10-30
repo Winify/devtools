@@ -23,6 +23,8 @@ export interface NavigationRecapture {
   native: boolean
   snapshots: ActionSnapshot[]
   queued: QueuedPageCapture
+  /** False once a newer page capture has been queued; its own capture then reads the newer state. */
+  isLatest: () => boolean
 }
 
 /**
@@ -35,7 +37,8 @@ export async function recaptureAfterNavigation({
   runner,
   native,
   snapshots,
-  queued
+  queued,
+  isLatest
 }: NavigationRecapture): Promise<void> {
   await queued.settled
   try {
@@ -46,7 +49,7 @@ export async function recaptureAfterNavigation({
       runner,
       native
     )
-    if (snap && capturedPageState(snap)) {
+    if (snap && capturedPageState(snap) && isLatest()) {
       supersedeSnapshotAt(snapshots, snap)
     }
   } catch (err) {

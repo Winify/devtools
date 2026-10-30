@@ -80,6 +80,31 @@ describe('Nightwatch post-navigation re-capture', () => {
     })
   })
 
+  it('takes no re-capture when the queued capture already read the destination', async () => {
+    originsRead([1000, 2000])
+    vi.mocked(captureActionSnapshot).mockResolvedValueOnce(
+      shot({
+        command: 'click',
+        timestamp: 2500,
+        url: 'http://app.test/secure',
+        screenshot: 'NEW'
+      })
+    )
+
+    await cap.anchorAfterNavigation(browser)
+    await cap.captureCommand('click', ['#next'], null, undefined, {
+      timestamp: 2500
+    })
+    await cap.anchorAfterNavigation(browser, 2500)
+    await Promise.all(cap.snapshotCaptures)
+
+    expect(captureActionSnapshot).toHaveBeenCalledTimes(1)
+    expect(cap.actionSnapshots[0]).toMatchObject({
+      url: 'http://app.test/secure',
+      screenshot: 'NEW'
+    })
+  })
+
   it('takes no extra capture when the document is not replaced', async () => {
     originsRead([1000])
     vi.mocked(captureActionSnapshot).mockResolvedValueOnce(
@@ -178,6 +203,48 @@ describe('Nightwatch post-navigation re-capture', () => {
     expect(cap.actionSnapshots.find((s) => s.timestamp === 200)).toMatchObject({
       url: 'http://app.test/secure',
       screenshot: 'http://app.test/secure'
+    })
+  })
+
+  it('discards a re-capture superseded by a page capture queued while it was in flight', async () => {
+    originsRead([1000, 2000])
+    let finishRecapture!: (snap: ActionSnapshot) => void
+    vi.mocked(captureActionSnapshot)
+      .mockResolvedValueOnce(
+        shot({ url: 'http://app.test/login', screenshot: 'OLD' })
+      )
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (finishRecapture = resolve))
+      )
+      .mockResolvedValueOnce(
+        shot({
+          command: 'click',
+          timestamp: 150,
+          url: 'http://app.test/secure',
+          screenshot: 'NEXT'
+        })
+      )
+
+    await cap.anchorAfterNavigation(browser)
+    await cap.captureCommand('click', ['#submit'], null, undefined, {
+      timestamp: 100
+    })
+    const anchored = cap.anchorAfterNavigation(browser, 100)
+    await vi.waitFor(() =>
+      expect(captureActionSnapshot).toHaveBeenCalledTimes(2)
+    )
+    await cap.captureCommand('click', ['#next'], null, undefined, {
+      timestamp: 150
+    })
+    finishRecapture(
+      shot({ url: 'http://app.test/secure', screenshot: 'STALE' })
+    )
+    await anchored
+    await Promise.all(cap.snapshotCaptures)
+
+    expect(cap.actionSnapshots.find((s) => s.timestamp === 100)).toMatchObject({
+      url: 'http://app.test/login',
+      screenshot: 'OLD'
     })
   })
 
