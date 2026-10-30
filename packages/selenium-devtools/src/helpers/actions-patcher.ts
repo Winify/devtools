@@ -25,15 +25,17 @@ function patchActionsPerform(
     this: unknown
   ) => Promise<void>
   actionsProto.perform = async function patchedPerform(this: unknown) {
-    await originalPerform.call(this)
-    const driver = actionsOwners.get(this as object)
-    if (!driver || !hooks.afterActions) {
-      return
-    }
     try {
-      hooks.afterActions(driver)
-    } catch (err) {
-      log.warn(`afterActions hook threw: ${errorMessage(err)}`)
+      await originalPerform.call(this)
+    } finally {
+      const driver = actionsOwners.get(this as object)
+      if (driver && hooks.afterActions) {
+        try {
+          hooks.afterActions(driver)
+        } catch (err) {
+          log.warn(`afterActions hook threw: ${errorMessage(err)}`)
+        }
+      }
     }
   }
 }

@@ -525,10 +525,13 @@ export class SessionCapturer extends SessionCapturerBase {
     // the one that caused it. The guard exists for the case where that is a guess.
     // A wait sent running is newest from its start, but it has not ended, so it
     // did not cause the navigation.
-    await Promise.all([
+    const [drain] = await Promise.allSettled([
       this.captureTrace(browser, true, this.#newestEndedTimestamp()),
       recapture
     ])
+    if (drain.status === 'rejected') {
+      log.debug(`Post-navigation drain failed: ${errorMessage(drain.reason)}`)
+    }
   }
 
   /**
@@ -677,7 +680,6 @@ export class SessionCapturer extends SessionCapturerBase {
     await this.captureNetworkFromPerformanceLogs(browser)
   }
 
-  /** At a test or scenario end, before its slice is written: the proxy drain there is never throttled. */
   /** Rows after the last capture saw a state nothing captured; one more capture, stamped at that capture, shows the test's end. */
   async captureFinalFrame(): Promise<void> {
     await Promise.all(this.snapshotCaptures)

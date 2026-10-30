@@ -48,13 +48,16 @@ describe('finalFrameStamp', () => {
 })
 
 describe('capturedPageState', () => {
-  it('holds for a capture that read a url or a screenshot', () => {
-    expect(
-      capturedPageState({ timestamp: 1, command: 'click', url: 'https://a/' })
-    ).toBe(true)
+  it('holds for a capture that read a screenshot', () => {
     expect(
       capturedPageState({ timestamp: 1, command: 'click', screenshot: 'PNG' })
     ).toBe(true)
+  })
+
+  it('fails for a url-only capture, which has no image to pair the url with', () => {
+    expect(
+      capturedPageState({ timestamp: 1, command: 'click', url: 'https://a/' })
+    ).toBe(false)
   })
 
   it('fails for a hollow capture from a session that had already ended', () => {

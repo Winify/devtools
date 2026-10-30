@@ -173,15 +173,17 @@ describe('patchActions', () => {
     expect(onCommand).not.toHaveBeenCalled()
   })
 
-  it('reports nothing when a sequence fails to perform', async () => {
+  it('still reports a sequence that moved the page before it failed, and rethrows its error', async () => {
     const FakeDriver = fakeDriverClass()
     const afterActions = vi.fn()
     patchActions(FakeDriver, hooksWith(afterActions))
+    const driver = new FakeDriver()
 
-    await expect(
-      new FakeDriver().actions({ fails: true }).perform()
-    ).rejects.toThrow('stale element')
-    expect(afterActions).not.toHaveBeenCalled()
+    await expect(driver.actions({ fails: true }).perform()).rejects.toThrow(
+      'stale element'
+    )
+    expect(afterActions).toHaveBeenCalledTimes(1)
+    expect(afterActions.mock.calls[0]![0]).toBe(driver)
   })
 
   it('wraps perform once however often it is patched', async () => {

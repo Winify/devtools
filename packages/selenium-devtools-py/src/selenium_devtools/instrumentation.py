@@ -558,9 +558,16 @@ def _capture_final_frame(driver: Any) -> bool:
     if stamp is None:
         return False
     command, timestamp = stamp
-    snapshot = _capture_action_snapshot(driver, command, timestamp, _take_screenshot(driver))
-    if snapshot is None:
+    # Frames are screenshot-backed: panes merged over an earlier image would pair two documents.
+    # Frames are screenshot-backed: panes merged over an earlier image would pair two documents.
+    shot = _take_screenshot(driver)
+    if not shot:
         return False
+    snapshot = _capture_action_snapshot(driver, command, timestamp, shot) or {
+        "timestamp": timestamp,
+        "command": command,
+        "screenshot": shot,
+    }
     superseded: dict = {}
     for kept in _state["action_snapshots"]:
         if kept["timestamp"] == timestamp and kept is not snapshot:

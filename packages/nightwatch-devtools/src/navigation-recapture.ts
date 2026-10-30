@@ -40,8 +40,8 @@ export async function recaptureAfterNavigation({
   queued,
   isLatest
 }: NavigationRecapture): Promise<void> {
-  await queued.settled
   try {
+    await queued.settled
     const snap = await captureActionSnapshot(
       browser,
       queued.command,

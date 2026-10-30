@@ -1,8 +1,8 @@
 import type { ActionSnapshot } from '@wdio/devtools-shared'
 
-/** A capture that read neither a url nor a screenshot saw no page, so it must not replace one that did. */
+/** Frames are screenshot-backed: a url-only capture merged over an earlier record would pair the new url with the old image and DOM. */
 export function capturedPageState(snap: ActionSnapshot): boolean {
-  return Boolean(snap.url || snap.screenshot)
+  return Boolean(snap.screenshot)
 }
 
 export interface FinalFrameCommand {

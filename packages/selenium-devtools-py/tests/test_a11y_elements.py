@@ -352,6 +352,9 @@ class TestTheEndOfATest(unittest.TestCase):
             self.tree = [{"selector": "#before"}]
             self.scripts_run = 0
 
+        def get_screenshot_as_base64(self):
+            return "END"
+
         def execute_script(self, script, *args):
             self.scripts_run += 1
             return self.tree
@@ -425,18 +428,31 @@ class TestTheEndOfATest(unittest.TestCase):
             instrumentation.capture_final_frame(driver)
             self.assertEqual(driver.scripts_run, reads, "the quit repeated the call report's capture")
 
-    def test_a_partial_final_capture_keeps_the_earlier_screenshot(self):
+    def test_a_final_capture_without_a_screenshot_leaves_the_record_unchanged(self):
         driver = self.Driver()
         with self._ended():
             instrumentation._state["test_rows"].append(("clickElement", 1200))
             instrumentation._maybe_capture_action_snapshot(driver, "clickElement", 1200, "SHOT")
+            before = dict(instrumentation.action_snapshots()[0])
             driver.tree = [{"selector": "#after"}]
             self._step(driver, "getElementText", 1300)
             with mock.patch.object(instrumentation, "_take_screenshot", return_value=None):
                 instrumentation.capture_final_frame(driver)
             snaps = instrumentation.action_snapshots()
-        self.assertEqual(snaps[0]["screenshot"], "SHOT")
-        self.assertEqual(snaps[0]["elements"][0]["selector"], "#after")
+        self.assertEqual(snaps, [before])
+
+    def test_a_screenshot_only_final_capture_supersedes_the_screenshot(self):
+        driver = self.Driver()
+        with self._ended():
+            instrumentation._state["test_rows"].append(("clickElement", 1200))
+            instrumentation._maybe_capture_action_snapshot(driver, "clickElement", 1200, "SHOT")
+            driver.tree = []
+            self._step(driver, "getElementText", 1300)
+            with mock.patch.object(instrumentation, "_take_screenshot", return_value="END"):
+                instrumentation.capture_final_frame(driver)
+            snaps = instrumentation.action_snapshots()
+        self.assertEqual([(s["timestamp"], s["screenshot"]) for s in snaps], [(1200, "END")])
+        self.assertEqual(snaps[0]["elements"][0]["selector"], "#before")
 
     def test_the_final_frame_comes_from_the_driver_that_captured_last(self):
         owner, other = self.Driver(), self.Driver()
