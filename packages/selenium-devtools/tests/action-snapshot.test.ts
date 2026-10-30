@@ -12,6 +12,7 @@ import {
 } from '../src/helpers/commandPostActions.js'
 import { captureActionSnapshot } from '../src/action-snapshot.js'
 import { captureFinalFrame } from '../src/helpers/finalFrame.js'
+import { handleActionsPerformed } from '../src/helpers/commandPostActions.js'
 import type { SessionLifecycleCtx } from '../src/session-lifecycle.js'
 import { getDriverOriginals } from '../src/driverPatcher.js'
 import {
@@ -305,6 +306,30 @@ describe('selenium action-snapshot capture gate', () => {
 
       expect(vi.mocked(coreCapture)).not.toHaveBeenCalled()
     })
+
+    it('keeps the earlier capture when the end state saw no page', async () => {
+      vi.mocked(coreCapture).mockResolvedValueOnce({
+        timestamp: 1,
+        command: 'click',
+        screenshot: 'GOOD',
+        elements: [{ selector: '#good' }]
+      } as unknown as ActionSnapshot)
+      const bag = await run(['click', 'getText'])
+      const before = { ...bag.actionSnapshots[0]! }
+      expect(before.screenshot).toBe('GOOD')
+
+      vi.mocked(coreCapture).mockClear()
+      vi.mocked(coreCapture).mockResolvedValueOnce({
+        timestamp: 1,
+        command: 'click',
+        snapshotText: '[Page]',
+        elements: []
+      } as unknown as ActionSnapshot)
+      await endOfTest(bag)
+
+      expect(vi.mocked(coreCapture)).toHaveBeenCalledTimes(1)
+      expect(bag.actionSnapshots).toEqual([before])
+    })
   })
 })
 
@@ -385,5 +410,20 @@ describe('the per-action snapshot on a native session', () => {
     } finally {
       restore()
     }
+  })
+})
+
+describe('driver-level action sequences', () => {
+  it('captures the page a perform left without adding a timeline row', async () => {
+    const bag = makeCtx(fakeDriver())
+    vi.mocked(coreCapture).mockClear()
+
+    handleActionsPerformed(bag.ctx)
+    await Promise.all(bag.snapshotCaptures)
+
+    expect(vi.mocked(coreCapture)).toHaveBeenCalledTimes(1)
+    expect(bag.capturer.commandsLog).toHaveLength(0)
+    expect(bag.actionSnapshots).toHaveLength(1)
+    expect(bag.actionSnapshots[0]!.command).toBe('performActions')
   })
 })

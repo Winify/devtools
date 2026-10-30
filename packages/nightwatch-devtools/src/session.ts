@@ -3,6 +3,7 @@ import {
   CAPTURE_PERFORMANCE_SCRIPT,
   SessionCapturerBase,
   applyPerformanceData,
+  capturedPageState,
   collectorDrainExpression,
   drainCollectorWithRecovery,
   errorMessage,
@@ -652,7 +653,7 @@ export class SessionCapturer extends SessionCapturerBase {
         this.runner,
         this.isNativeAppSession
       )
-      if (snap) {
+      if (snap && capturedPageState(snap)) {
         supersedeSnapshotAt(this.actionSnapshots, snap)
       }
     } catch (err) {

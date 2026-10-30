@@ -159,6 +159,8 @@ export interface DriverPatcherHooks {
   afterNavigation?: (command: string) => Promise<void>
   // Awaited before an element click, sendKeys, clear or submit is sent.
   beforeInput?: () => Promise<void>
+  // Fired once an action sequence's perform() succeeds: it moves the page with no row of its own.
+  afterActions?: (driver: SeleniumDriverLike) => void
 }
 
 // Unwrapped WebDriver methods used by the plugin's own internal calls

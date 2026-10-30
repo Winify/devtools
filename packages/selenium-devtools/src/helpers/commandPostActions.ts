@@ -348,8 +348,17 @@ export async function handleOnCommand(
   }
   maybeDrainAfterDomCommand(ctx, capturer, cmd)
   maybeDrainAfterLiveCommand(ctx, capturer, cmd)
-  queueActionSnapshot(ctx, capturer, cmd, entry.timestamp, error)
+  queueActionSnapshot(ctx, capturer, cmd.command, entry.timestamp, error)
   void capturer.nativeNetwork.forward({ throttle: true })
+}
+
+/** A driver-level action sequence's page change, stamped at completion for later reads to inherit. */
+export function handleActionsPerformed(ctx: OnCommandCtx): void {
+  const capturer = ctx.sessionCapturer
+  if (!capturer) {
+    return
+  }
+  queueActionSnapshot(ctx, capturer, 'performActions', Date.now(), undefined)
 }
 
 /** Fire-and-forget post-action snapshot, drained at finalize. Stamped with the
@@ -359,7 +368,7 @@ export async function handleOnCommand(
 function queueActionSnapshot(
   ctx: OnCommandCtx,
   capturer: SessionCapturer,
-  cmd: CapturedCommand,
+  command: string,
   timestamp: number,
   error: unknown
 ): void {
@@ -368,8 +377,8 @@ function queueActionSnapshot(
   }
   // Reads, waits and lookups inherit the earlier capture; only the test's first mapped command adds an initial frame.
   const initialFrame =
-    capturer.awaitingInitialFrame && !!mapCommandToAction(cmd.command)
-  if (skipsCapture(cmd.command) && !initialFrame) {
+    capturer.awaitingInitialFrame && !!mapCommandToAction(command)
+  if (skipsCapture(command) && !initialFrame) {
     return
   }
   if (initialFrame) {
@@ -380,7 +389,7 @@ function queueActionSnapshot(
   ctx.snapshotCaptures.push(
     captureActionSnapshot(
       ctx.driver,
-      cmd.command,
+      command,
       timestamp,
       capturer.isNativeAppSession
     ).then((snap) => {

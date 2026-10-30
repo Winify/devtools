@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { finalFrameStamp } from '@wdio/devtools-core'
+import { capturedPageState, finalFrameStamp } from '@wdio/devtools-core'
 
 const commands = [
   { command: 'url', timestamp: 90 },
@@ -44,5 +44,35 @@ describe('finalFrameStamp', () => {
       timestamp: 125,
       command: 'click'
     })
+  })
+})
+
+describe('capturedPageState', () => {
+  it('holds for a capture that read a url or a screenshot', () => {
+    expect(
+      capturedPageState({ timestamp: 1, command: 'click', url: 'https://a/' })
+    ).toBe(true)
+    expect(
+      capturedPageState({ timestamp: 1, command: 'click', screenshot: 'PNG' })
+    ).toBe(true)
+  })
+
+  it('fails for a hollow capture from a session that had already ended', () => {
+    expect(
+      capturedPageState({
+        timestamp: 1,
+        command: 'click',
+        snapshotText: '[Page]',
+        elements: []
+      })
+    ).toBe(false)
+    expect(
+      capturedPageState({
+        timestamp: 1,
+        command: 'click',
+        url: '',
+        screenshot: ''
+      })
+    ).toBe(false)
   })
 })

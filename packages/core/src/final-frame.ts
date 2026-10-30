@@ -1,3 +1,10 @@
+import type { ActionSnapshot } from '@wdio/devtools-shared'
+
+/** A capture that read neither a url nor a screenshot saw no page, so it must not replace one that did. */
+export function capturedPageState(snap: ActionSnapshot): boolean {
+  return Boolean(snap.url || snap.screenshot)
+}
+
 export interface FinalFrameCommand {
   command: string
   timestamp: number

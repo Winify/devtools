@@ -1,5 +1,6 @@
 import logger from '@wdio/logger'
 import {
+  capturedPageState,
   errorMessage,
   finalFrameStamp,
   supersedeSnapshotAt
@@ -38,7 +39,7 @@ export async function captureFinalFrame(
       stamp.timestamp,
       capturer.isNativeAppSession
     )
-    if (snap) {
+    if (snap && capturedPageState(snap)) {
       supersedeSnapshotAt(ctx.actionSnapshots, snap)
     }
   } catch (err) {

@@ -248,6 +248,38 @@ describe('nightwatch action-snapshot timestamp binding', () => {
     cap.cleanup()
   })
 
+  it('keeps the earlier capture when the end-of-test frame saw no page', async () => {
+    type Snap = Awaited<ReturnType<typeof coreCapture>>
+    vi.mocked(coreCapture).mockResolvedValueOnce({
+      timestamp: 1,
+      command: 'click',
+      screenshot: 'GOOD',
+      elements: [{ selector: '#good' }]
+    } as Snap)
+    const cap = makeCapturer()
+    const at = (command: string, timestamp: number) =>
+      cap.captureCommand(command, ['#el'], undefined, undefined, { timestamp })
+    await at('click', 1)
+    await at('getText', 2)
+    await Promise.all(cap.snapshotCaptures)
+    const before = { ...cap.actionSnapshots[0]! }
+    expect(before.screenshot).toBe('GOOD')
+
+    vi.mocked(coreCapture)
+      .mockClear()
+      .mockResolvedValueOnce({
+        timestamp: 1,
+        command: 'click',
+        snapshotText: '[Page]',
+        elements: []
+      } as Snap)
+    await cap.captureFinalFrame()
+
+    expect(vi.mocked(coreCapture)).toHaveBeenCalledTimes(1)
+    expect(cap.actionSnapshots).toEqual([before])
+    cap.cleanup()
+  })
+
   it('takes no end-of-test frame when the test ends on a capturing command', async () => {
     const cap = makeCapturer()
     await cap.captureCommand('getText', ['#el'], undefined, undefined, {
