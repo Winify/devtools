@@ -30,7 +30,7 @@ from . import (
     read_value_locators,
     wait_tracking,
 )
-from ._contract import MAPPED_COMMANDS, PAGE_CHANGING_COMMANDS
+from ._contract import MAPPED_COMMANDS, READ_ONLY_COMMANDS
 from .assert_tracer import ScriptAssertionTracer
 from .capturer import SessionCapturer
 from .cdp_screencast import start_push_screencast
@@ -292,6 +292,12 @@ _state: dict = {
     # Re-armed per test by reset_test_capture().
     "awaiting_initial_frame": True,
     "initial_frame_retried": False,
+    # The test's command rows as (command, timestamp), and the timestamp of the
+    # last capture attempted — what the end-of-test capture is decided from.
+    "test_rows": [],
+    "test_started_ms": 0,
+    "last_captured_ts": None,
+    "final_frame_taken": False,
 }
 
 
@@ -425,7 +431,13 @@ def resolved_output_dir() -> Optional[str]:
     return _state.get("output_dir")
 
 
-_SUBMIT_SCRIPT_MARKER = "/* submitForm */"
+# The atoms Selenium's own WebElement methods run as scripts, tagged with a
+# leading comment; the command each one stands for.
+_ATOM_SCRIPT_COMMANDS = {
+    "/* submitForm */": "submit",
+    "/* getAttribute */": "getElementAttribute",
+    "/* isDisplayed */": "isDisplayed",
+}
 
 
 def _action_capture_enabled(driver: Any) -> bool:
@@ -481,15 +493,17 @@ def _capture_action_snapshot(
 def _maybe_capture_action_snapshot(
     driver: Any, command: str, timestamp: int, shot: Optional[str]
 ) -> None:
-    """Capture on a page-changing command, and on a test's first mapped command
-    as its initial frame. Reads and waits inherit the capture before them."""
+    """Capture on every command that is not a known read, and on a test's first
+    mapped command as its initial frame. Reads and waits inherit the capture
+    before them."""
     initial = _state["awaiting_initial_frame"] and command in MAPPED_COMMANDS
-    if command not in PAGE_CHANGING_COMMANDS and not initial:
+    if command in READ_ONLY_COMMANDS and not initial:
         return
     if not _action_capture_enabled(driver):
         return
     if initial:
         _state["awaiting_initial_frame"] = False
+    _state["last_captured_ts"] = timestamp
     snapshot = _capture_action_snapshot(driver, command, timestamp, shot)
     if not initial or _state["initial_frame_retried"]:
         return
@@ -499,16 +513,80 @@ def _maybe_capture_action_snapshot(
 
 
 def _capture_command(driver_command: str, params: Any) -> str:
-    """Selenium's `WebElement.submit()` reaches `execute` as a marked script."""
+    """The command a script-run atom stands for: Selenium's `WebElement` methods
+    reach `execute` as marked scripts, not as the command they perform."""
     script = params.get("script") if isinstance(params, dict) else None
-    if isinstance(script, str) and script.startswith(_SUBMIT_SCRIPT_MARKER):
-        return "submit"
+    if isinstance(script, str):
+        for marker, command in _ATOM_SCRIPT_COMMANDS.items():
+            if script.startswith(marker):
+                return command
     return driver_command
 
 
+def _final_frame_stamp(
+    rows: List[tuple], test_started_ms: int, last_captured_ts: Optional[int]
+) -> Optional[tuple]:
+    """Mirrors core's `finalFrameStamp`: the (command, timestamp) the end-of-test
+    capture replaces, or None when no row follows the last capture."""
+    in_test = [row for row in rows if row[1] >= test_started_ms]
+    if not in_test:
+        return None
+    if last_captured_ts is None or last_captured_ts < test_started_ms:
+        return in_test[-1]
+    if not any(ts > last_captured_ts for _, ts in in_test):
+        return None
+    at_or_before = [row for row in in_test if row[1] <= last_captured_ts]
+    owner = at_or_before[-1] if at_or_before else in_test[0]
+    return (owner[0], last_captured_ts)
+
+
+def _capture_final_frame(driver: Any) -> bool:
+    if not _action_capture_enabled(driver):
+        return False
+    stamp = _final_frame_stamp(
+        _state["test_rows"], _state["test_started_ms"], _state["last_captured_ts"]
+    )
+    if stamp is None:
+        return False
+    command, timestamp = stamp
+    snapshot = _capture_action_snapshot(driver, command, timestamp, _take_screenshot(driver))
+    if snapshot is None:
+        return False
+    _state["action_snapshots"][:] = [
+        kept
+        for kept in _state["action_snapshots"]
+        if kept["timestamp"] != timestamp or kept is snapshot
+    ]
+    _state["last_captured_ts"] = timestamp
+    return True
+
+
+def capture_final_frame(driver: Any = None) -> None:
+    """Replace the test's last capture with the page the test ended on, when
+    reads followed it.
+
+    The last page-changing command can return before its navigation commits,
+    so its capture shows the page it left; the reads after it saw the new one.
+    Once per test: the call report and the driver's quit both reach here.
+    """
+    if _state["final_frame_taken"]:
+        return
+    for live in [driver] if driver is not None else list(_state["sessions"]):
+        try:
+            if _capture_final_frame(live):
+                _state["final_frame_taken"] = True
+                return
+        except Exception as exc:  # noqa: BLE001 — a missing end frame, not a failed run
+            _log.debug("final frame capture failed: %s", exc)
+
+
 def reset_test_capture() -> None:
-    """Re-arm the initial frame for the test about to start."""
-    _state.update(awaiting_initial_frame=True, initial_frame_retried=False)
+    """Re-arm the initial frame and start the row ledger for the test about to start."""
+    _state.update(
+        awaiting_initial_frame=True, initial_frame_retried=False,
+        test_rows=[], test_started_ms=now_ms(),
+        last_captured_ts=None, final_frame_taken=False,
+    )
 
 
 def _begin_screencast_run(entry: Optional[dict], shot: Optional[str] = None) -> None:
@@ -1056,6 +1134,7 @@ def install(
             # Finalize the screencast BEFORE quit tears the session down — after
             # orig_execute the driver's WebSocket/session is gone.
             if driver_command == "quit":
+                capture_final_frame(self)
                 _on_quit(capturer, self)
             elif driver_command == "newSession":
                 _enable_bidi_capability(params)  # request BiDi before the session opens
@@ -1084,6 +1163,9 @@ def install(
                 parent_id=wait_tracking.parent_of(poll),
             )
             wait_tracking.note_poll_row(poll, failed)
+            _state["test_rows"].append(
+                (_capture_command(driver_command, params), failed["timestamp"])
+            )
             raise
 
         # WebDriver.execute returns the full response dict; the useful payload
@@ -1107,12 +1189,10 @@ def install(
             parent_id=wait_tracking.parent_of(poll),
         )
         wait_tracking.note_poll_row(poll, row)
-        _maybe_capture_action_snapshot(
-            self,
-            _capture_command(driver_command, params),
-            row.get("timestamp", start),
-            shot,
-        )
+        command = _capture_command(driver_command, params)
+        stamp = row.get("timestamp", start)
+        _state["test_rows"].append((command, stamp))
+        _maybe_capture_action_snapshot(self, command, stamp, shot)
         if driver_command in NAVIGATION_COMMANDS:
             _attach_performance(capturer, self, row, params)
         # No per-command line here: the Actions timeline lists every command as
@@ -1142,6 +1222,8 @@ def install(
         trace=trace, filmstrip=filmstrip, filmstrip_frames=[],
         a11y=a11y, element_scripts=None, page_scripts=None, action_snapshots=[],
         awaiting_initial_frame=True, initial_frame_retried=False,
+        test_rows=[], test_started_ms=now_ms(), last_captured_ts=None,
+        final_frame_taken=False,
     )
 
 

@@ -25,6 +25,7 @@ import {
   recordTraceBoundary,
   flushCurrentTestTrace
 } from './session-lifecycle.js'
+import { captureFinalFrame } from './helpers/finalFrame.js'
 import type { SpecRange, TraceArtifact } from '@wdio/devtools-core'
 import {
   startTest as tmStartTest,
@@ -480,6 +481,7 @@ class SeleniumDevToolsPlugin {
   async endTest(state: TestStats['state'] = 'passed') {
     const ended = this.#testManager?.getCurrentTest() ?? null
     tmEndTest(this.#getInternals(), state)
+    await captureFinalFrame(this.#getInternals())
     const flushed = flushCurrentTestTrace(this.#getInternals())
     await this.#emitTestArtifacts(ended, state === 'failed', flushed)
   }
@@ -493,6 +495,7 @@ class SeleniumDevToolsPlugin {
   async endScenario(state: TestStats['state'] = 'passed') {
     const ended = this.#testManager?.getCurrentTest() ?? null
     tmEndScenario(this.#getInternals(), state)
+    await captureFinalFrame(this.#getInternals())
     const flushed = flushCurrentTestTrace(this.#getInternals())
     await this.#emitTestArtifacts(ended, state === 'failed', flushed)
   }

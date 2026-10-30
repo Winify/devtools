@@ -283,6 +283,7 @@ export async function captureCucumberScenarioBeforeQuit(
       )
     }
     await ctx.sessionCapturer.captureTraceAtTestEnd(browser)
+    await ctx.sessionCapturer.captureFinalFrame()
     flushTestSlice(ctx)
     await ctx.emitTestArtifacts(
       scenario?.uid,

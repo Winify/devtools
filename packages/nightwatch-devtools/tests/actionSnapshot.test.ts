@@ -210,4 +210,59 @@ describe('nightwatch action-snapshot timestamp binding', () => {
     expect(cap.actionSnapshots).toHaveLength(0)
     cap.cleanup()
   })
+
+  it('captures an unmapped command that can change the page, but not a lookup', async () => {
+    const cap = makeCapturer()
+    const at = (command: string, args: unknown[], timestamp: number) =>
+      cap.captureCommand(command, args, undefined, undefined, { timestamp })
+    await at('submitForm', ['#form'], 1)
+    await at('findElement', ['#el'], 2)
+    await Promise.all(cap.snapshotCaptures)
+
+    expect(cap.actionSnapshots.map((s) => s.timestamp)).toEqual([1])
+    cap.cleanup()
+  })
+
+  it('takes an end-of-test frame that replaces the last capture when reads follow it', async () => {
+    const cap = makeCapturer()
+    const at = (command: string, timestamp: number) =>
+      cap.captureCommand(command, ['#el'], undefined, undefined, { timestamp })
+    await at('click', 1)
+    await at('getText', 2)
+    await Promise.all(cap.snapshotCaptures)
+    expect(cap.actionSnapshots.map((s) => s.timestamp)).toEqual([1])
+
+    type Snap = Awaited<ReturnType<typeof coreCapture>>
+    vi.mocked(coreCapture)
+      .mockClear()
+      .mockResolvedValueOnce({
+        timestamp: 1,
+        command: 'click',
+        screenshot: 'FINAL'
+      } as Snap)
+    await cap.captureFinalFrame()
+
+    expect(vi.mocked(coreCapture)).toHaveBeenCalledTimes(1)
+    expect(cap.actionSnapshots).toHaveLength(1)
+    expect(cap.actionSnapshots[0]!.screenshot).toBe('FINAL')
+    cap.cleanup()
+  })
+
+  it('takes no end-of-test frame when the test ends on a capturing command', async () => {
+    const cap = makeCapturer()
+    await cap.captureCommand('getText', ['#el'], undefined, undefined, {
+      timestamp: 1
+    })
+    await cap.captureCommand('click', ['#el'], undefined, undefined, {
+      timestamp: 2
+    })
+    await Promise.all(cap.snapshotCaptures)
+
+    vi.mocked(coreCapture).mockClear()
+    await cap.captureFinalFrame()
+
+    expect(vi.mocked(coreCapture)).not.toHaveBeenCalled()
+    expect(cap.actionSnapshots.map((s) => s.timestamp)).toEqual([1, 2])
+    cap.cleanup()
+  })
 })

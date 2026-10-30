@@ -59,11 +59,15 @@ export class SessionCapturer extends SessionCapturerBase {
   awaitingInitialFrame = true
   initialFrameRetried = false
   testCaptureGeneration = 0
+  /** Timestamp of the latest command that queued a capture; the end-of-test frame is stamped there. */
+  lastCapturedTimestamp: number | undefined = undefined
+  testStartWallTime = 0
 
   resetTestCapture(): void {
     this.awaitingInitialFrame = true
     this.initialFrameRetried = false
     this.testCaptureGeneration++
+    this.testStartWallTime = Date.now()
   }
 
   #clientConnected = false

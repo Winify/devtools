@@ -11,6 +11,8 @@ import {
   type OnCommandCtx
 } from '../src/helpers/commandPostActions.js'
 import { captureActionSnapshot } from '../src/action-snapshot.js'
+import { captureFinalFrame } from '../src/helpers/finalFrame.js'
+import type { SessionLifecycleCtx } from '../src/session-lifecycle.js'
 import { getDriverOriginals } from '../src/driverPatcher.js'
 import {
   RetryTracker,
@@ -109,7 +111,7 @@ describe('selenium action-snapshot timestamp binding', () => {
     )
   })
 
-  it('does not capture for a non-mapped command', async () => {
+  it('does not capture for a read-only lookup', async () => {
     const { ctx, snapshotCaptures, actionSnapshots } = makeCtx(fakeDriver())
     await handleOnCommand(
       ctx,
@@ -163,6 +165,11 @@ describe('selenium action-snapshot capture gate', () => {
       'waitForDisplayed'
     ])
     expect(actionSnapshots.map((s) => s.timestamp)).toEqual([1])
+  })
+
+  it('captures an unmapped command that can change the page', async () => {
+    const { actionSnapshots } = await run(['executeScript', 'actions'])
+    expect(actionSnapshots.map((s) => s.timestamp)).toEqual([1, 2])
   })
 
   it('captures a leading read as the initial frame, once per test', async () => {
@@ -257,6 +264,47 @@ describe('selenium action-snapshot capture gate', () => {
 
     expect(bag.capturer.initialFrameRetried).toBe(false)
     expect(bag.capturer.awaitingInitialFrame).toBe(true)
+  })
+
+  describe('end-of-test frame', () => {
+    const endOfTest = (bag: ReturnType<typeof makeCtx>) =>
+      captureFinalFrame(bag.ctx as unknown as SessionLifecycleCtx)
+
+    it('replaces the last capture with the end state when reads follow it', async () => {
+      const bag = await run(['click', 'getText'])
+      expect(bag.actionSnapshots.map((s) => s.timestamp)).toEqual([1])
+
+      vi.mocked(coreCapture).mockClear()
+      vi.mocked(coreCapture).mockResolvedValueOnce({
+        timestamp: 1,
+        command: 'click',
+        screenshot: 'FINAL',
+        elements: [{ selector: '#final' }]
+      } as unknown as ActionSnapshot)
+      await endOfTest(bag)
+
+      expect(vi.mocked(coreCapture)).toHaveBeenCalledTimes(1)
+      expect(bag.actionSnapshots).toHaveLength(1)
+      expect(bag.actionSnapshots[0]!.screenshot).toBe('FINAL')
+      expect(bag.actionSnapshots[0]!.elements).toEqual([{ selector: '#final' }])
+    })
+
+    it('takes no end-of-test frame when the test ends on a capturing command', async () => {
+      const bag = await run(['getText', 'click'])
+      vi.mocked(coreCapture).mockClear()
+      await endOfTest(bag)
+
+      expect(vi.mocked(coreCapture)).not.toHaveBeenCalled()
+      expect(bag.actionSnapshots.map((s) => s.timestamp)).toEqual([1, 2])
+    })
+
+    it('takes no end-of-test frame for a test with no rows', async () => {
+      const bag = makeCtx(fakeDriver())
+      vi.mocked(coreCapture).mockClear()
+      await endOfTest(bag)
+
+      expect(vi.mocked(coreCapture)).not.toHaveBeenCalled()
+    })
   })
 })
 

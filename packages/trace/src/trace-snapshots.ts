@@ -70,6 +70,19 @@ export function upsertRichestSnapshot(
   mergeSnapshotInto(snapshots[idx]!, snap)
 }
 
+/** Replace whatever holds the snapshot's timestamp, unlike upsertRichestSnapshot, for a capture that is strictly later state and so supersedes its fields. */
+export function replaceSnapshotAt(
+  snapshots: ActionSnapshot[],
+  snap: ActionSnapshot
+): void {
+  for (let i = snapshots.length - 1; i >= 0; i--) {
+    if (snapshots[i]!.timestamp === snap.timestamp) {
+      snapshots.splice(i, 1)
+    }
+  }
+  snapshots.push(snap)
+}
+
 export function buildSnapshotResources(
   rawSnapshots: ActionSnapshot[],
   pageId: string

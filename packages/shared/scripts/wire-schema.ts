@@ -4,7 +4,11 @@ import { realpathSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
-import { ACTION_MAP, changesPage } from '../src/trace-actions.js'
+import {
+  ACTION_MAP,
+  READ_ONLY_COMMANDS,
+  skipsCapture
+} from '../src/trace-actions.js'
 
 export type JsonSchema = { [key: string]: unknown }
 
@@ -14,7 +18,10 @@ export interface WireSchema {
   scopes: Record<string, JsonSchema>
   $defs: Record<string, JsonSchema>
   // Runner-native command names, evaluated from ACTION_MAP rather than typed out.
-  actionCommands: { pageChanging: string[]; mapped: string[] }
+  actionCommands: {
+    mapped: string[]
+    readOnly: string[]
+  }
 }
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -250,9 +257,10 @@ export function buildWireSchema(): WireSchema {
 // Every ACTION_MAP key is mapped by mapCommandToAction (its fallback only adds assert.*, which no WebDriver hook sees).
 function actionCommandSets(): WireSchema['actionCommands'] {
   const commands = Object.keys(ACTION_MAP).sort()
+  const known = [...new Set([...commands, ...READ_ONLY_COMMANDS])].sort()
   return {
-    pageChanging: commands.filter((c) => changesPage(c)),
-    mapped: commands
+    mapped: commands,
+    readOnly: known.filter((c) => skipsCapture(c))
   }
 }
 

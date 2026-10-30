@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { describe, it, expect } from 'vitest'
 import {
+  replaceSnapshotAt,
   upsertRichestSnapshot,
   writeTraceZip,
   type TraceCapturer
@@ -186,5 +187,30 @@ describe('snapshot binding contract (capture → export)', () => {
     expect(frame.toString('base64')).toBe(RESULT)
 
     await fs.rm(outputDir, { recursive: true, force: true })
+  })
+})
+
+describe('replaceSnapshotAt', () => {
+  it('replaces the record at its timestamp whole, elements included', () => {
+    const list = [
+      snap(50, REAL),
+      snap(100, REAL, { elements: [{ selector: '#old' }] })
+    ]
+    replaceSnapshotAt(list, snap(100, BLANK, { snapshotText: 'tree' }))
+    expect(list.filter((s) => s.timestamp === 100)).toEqual([
+      {
+        timestamp: 100,
+        command: 'click',
+        screenshot: BLANK,
+        snapshotText: 'tree'
+      }
+    ])
+    expect(list).toHaveLength(2)
+  })
+
+  it('appends when no record holds the timestamp', () => {
+    const list = [snap(50, REAL)]
+    replaceSnapshotAt(list, snap(100, BLANK))
+    expect(list.map((s) => s.timestamp)).toEqual([50, 100])
   })
 })

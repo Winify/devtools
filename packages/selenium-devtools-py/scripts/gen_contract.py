@@ -205,17 +205,18 @@ def _runner_cwd_env(runner_ts: str) -> str:
 
 def _action_commands(schema_path: Path) -> dict[str, list[str]]:
     """The runner-native command names the capture gate reads, evaluated from
-    shared's ACTION_MAP by ``wire-schema.ts`` rather than restated here.
+    shared's ``skipsCapture`` by ``wire-schema.ts`` rather than restated here.
 
-    Generated because a name that drifts is silent: a command missing from the
-    page-changing set is never captured, so its row shows the page before it.
+    Generated because a name that drifts is silent: a read missing from the
+    read-only set is captured on every poll, and a page change missing from it
+    is never captured, so its row shows the page before it.
     """
     if not schema_path.exists():
         raise SystemExit(
             f"{schema_path} is missing: run `npx tsx scripts/wire-schema.ts` in packages/shared"
         )
     sets = json.loads(schema_path.read_text()).get("actionCommands")
-    if not sets or "pageChanging" not in sets or "mapped" not in sets:
+    if not sets or "readOnly" not in sets or "mapped" not in sets:
         raise SystemExit(
             "contract drift: `actionCommands` is missing from wire-schema.json; "
             "regenerate it with packages/shared/scripts/wire-schema.ts"
@@ -430,7 +431,7 @@ def main() -> int:
     lines += [
         "",
         f"DATA_SCOPES = frozenset({sorted(data_keys)!r})",
-        f"PAGE_CHANGING_COMMANDS = frozenset({action_commands['pageChanging']!r})",
+        f"READ_ONLY_COMMANDS = frozenset({action_commands['readOnly']!r})",
         f"MAPPED_COMMANDS = frozenset({action_commands['mapped']!r})",
         f"CONTROL_SCOPES = frozenset({sorted(control.values())!r})",
         "",

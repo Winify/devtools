@@ -644,6 +644,8 @@ def pytest_runtest_logreport(report) -> None:  # noqa: ANN001
         return
     from . import instrumentation
 
+    if report.when == "call":
+        instrumentation.capture_final_frame()
     instrumentation.drain_native_network(capturer)
     file, line, name = report.location
     _registry.record(

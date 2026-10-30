@@ -565,3 +565,30 @@ class TestEachTestStartsWithItsOwnInitialFrame(unittest.TestCase):
             self.assertIs(instrumentation._state["awaiting_initial_frame"], True)
             self.assertIs(instrumentation._state["initial_frame_retried"], False)
 
+
+
+class TestTheFinalFrameIsTakenAtTheCallReport(unittest.TestCase):
+    """The call report lands while the driver is still alive, before the
+    fixture teardown that quits it. Setup and teardown reports are not the
+    test's last page."""
+
+    def _log(self, when):
+        report = _Report(when, "passed")
+        report.nodeid = "tests/t.py::test_a"
+        report.location = ("tests/t.py", 1, "test_a")
+        with mock.patch.object(plugin, "_opted_in", return_value=True), mock.patch.object(
+            plugin.devtools, "get_capturer", return_value=object()
+        ), mock.patch.object(plugin, "_publish"), mock.patch.object(
+            plugin, "_registry"
+        ), mock.patch.object(instrumentation, "drain_native_network"), mock.patch.object(
+            instrumentation, "capture_final_frame"
+        ) as final:
+            plugin.pytest_runtest_logreport(report)
+        return final
+
+    def test_the_call_report_takes_the_final_frame(self):
+        self._log("call").assert_called_once_with()
+
+    def test_the_setup_and_teardown_reports_do_not(self):
+        self._log("setup").assert_not_called()
+        self._log("teardown").assert_not_called()

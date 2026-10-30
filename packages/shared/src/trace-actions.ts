@@ -277,3 +277,50 @@ export function changesPage(command: string): boolean {
   }
   return METHOD_EFFECT[ACTION_MAP[command].method] === 'changes'
 }
+
+/** Driver lookups and reads that never change the page and have no ACTION_MAP
+ *  entry; the ACTION_MAP reads are covered by METHOD_EFFECT in `skipsCapture`. */
+export const READ_ONLY_COMMANDS: ReadonlySet<string> = new Set([
+  'findElement',
+  'findElements',
+  'findChildElement',
+  'findChildElements',
+  '$',
+  '$$',
+  'findElementFromShadowRoot',
+  'findElementsFromShadowRoot',
+  'getElementShadowRoot',
+  'getActiveElement',
+  'getWindowHandle',
+  'getWindowHandles',
+  'getCurrentContextHandle',
+  'getContextHandles',
+  'getCookies',
+  'getAllCookies',
+  'getCookie',
+  'getWindowRect',
+  'getLog',
+  'getAvailableLogTypes',
+  'getAlertText',
+  'getTimeouts',
+  'getScreenOrientation',
+  'status',
+  'takeScreenshot',
+  'screenshot',
+  'elementScreenshot',
+  'getHTML',
+  'getComputedRole',
+  'getComputedLabel'
+])
+
+/** Whether a command is known not to change the page, so its capture can be
+ *  skipped. Deny-list by design: an unlisted command still captures. */
+export function skipsCapture(command: string): boolean {
+  if (READ_ONLY_COMMANDS.has(command) || mapAssertCommand(command) !== null) {
+    return true
+  }
+  if (!Object.prototype.hasOwnProperty.call(ACTION_MAP, command)) {
+    return false
+  }
+  return METHOD_EFFECT[ACTION_MAP[command].method] === 'reads'
+}
