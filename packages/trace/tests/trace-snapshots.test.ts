@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { describe, it, expect } from 'vitest'
 import {
-  replaceSnapshotAt,
+  supersedeSnapshotAt,
   upsertRichestSnapshot,
   writeTraceZip,
   type TraceCapturer
@@ -190,27 +190,46 @@ describe('snapshot binding contract (capture → export)', () => {
   })
 })
 
-describe('replaceSnapshotAt', () => {
-  it('replaces the record at its timestamp whole, elements included', () => {
+describe('supersedeSnapshotAt', () => {
+  it('takes the later capture’s defined fields and keeps the rest', () => {
     const list = [
       snap(50, REAL),
       snap(100, REAL, { elements: [{ selector: '#old' }] })
     ]
-    replaceSnapshotAt(list, snap(100, BLANK, { snapshotText: 'tree' }))
+    supersedeSnapshotAt(list, snap(100, BLANK, { snapshotText: 'tree' }))
     expect(list.filter((s) => s.timestamp === 100)).toEqual([
       {
         timestamp: 100,
         command: 'click',
         screenshot: BLANK,
+        elements: [{ selector: '#old' }],
         snapshotText: 'tree'
       }
     ])
     expect(list).toHaveLength(2)
   })
 
+  it('keeps the earlier screenshot when a partial final capture has none', () => {
+    const list = [snap(100, REAL, { elements: [{ selector: '#old' }] })]
+    supersedeSnapshotAt(list, {
+      timestamp: 100,
+      command: 'click',
+      screenshot: undefined,
+      elements: [{ selector: '#new' }]
+    })
+    expect(list).toEqual([
+      {
+        timestamp: 100,
+        command: 'click',
+        screenshot: REAL,
+        elements: [{ selector: '#new' }]
+      }
+    ])
+  })
+
   it('appends when no record holds the timestamp', () => {
     const list = [snap(50, REAL)]
-    replaceSnapshotAt(list, snap(100, BLANK))
+    supersedeSnapshotAt(list, snap(100, BLANK))
     expect(list.map((s) => s.timestamp)).toEqual([50, 100])
   })
 })

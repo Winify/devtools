@@ -70,17 +70,25 @@ export function upsertRichestSnapshot(
   mergeSnapshotInto(snapshots[idx]!, snap)
 }
 
-/** Replace whatever holds the snapshot's timestamp, unlike upsertRichestSnapshot, for a capture that is strictly later state and so supersedes its fields. */
-export function replaceSnapshotAt(
+function definedFields(snap: ActionSnapshot): Partial<ActionSnapshot> {
+  return Object.fromEntries(
+    Object.entries(snap).filter(([, value]) => value !== undefined)
+  )
+}
+
+/** Supersede the record holding the snapshot's timestamp field by field: a later capture's defined fields win, and one it lacks (a screenshot that timed out) keeps the earlier value. */
+export function supersedeSnapshotAt(
   snapshots: ActionSnapshot[],
   snap: ActionSnapshot
 ): void {
+  let merged = snap
   for (let i = snapshots.length - 1; i >= 0; i--) {
     if (snapshots[i]!.timestamp === snap.timestamp) {
+      merged = { ...snapshots[i]!, ...definedFields(merged) }
       snapshots.splice(i, 1)
     }
   }
-  snapshots.push(snap)
+  snapshots.push(merged)
 }
 
 export function buildSnapshotResources(

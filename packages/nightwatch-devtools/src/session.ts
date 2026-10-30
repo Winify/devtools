@@ -11,7 +11,7 @@ import {
   mapCommandToAction,
   NativeNetworkCapture,
   pollUntilReady,
-  replaceSnapshotAt,
+  supersedeSnapshotAt,
   serializeError,
   upsertRichestSnapshot,
   type CapturedPerformancePayload,
@@ -653,7 +653,7 @@ export class SessionCapturer extends SessionCapturerBase {
         this.isNativeAppSession
       )
       if (snap) {
-        replaceSnapshotAt(this.actionSnapshots, snap)
+        supersedeSnapshotAt(this.actionSnapshots, snap)
       }
     } catch (err) {
       log.debug(`End-of-test frame capture failed: ${errorMessage(err)}`)

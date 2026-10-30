@@ -2,7 +2,7 @@ import logger from '@wdio/logger'
 import {
   errorMessage,
   finalFrameStamp,
-  replaceSnapshotAt
+  supersedeSnapshotAt
 } from '@wdio/devtools-core'
 import { captureActionSnapshot } from '../action-snapshot.js'
 import type { SessionLifecycleCtx } from '../session-lifecycle.js'
@@ -39,7 +39,7 @@ export async function captureFinalFrame(
       capturer.isNativeAppSession
     )
     if (snap) {
-      replaceSnapshotAt(ctx.actionSnapshots, snap)
+      supersedeSnapshotAt(ctx.actionSnapshots, snap)
     }
   } catch (err) {
     log.debug(`End-of-test frame capture failed: ${errorMessage(err)}`)

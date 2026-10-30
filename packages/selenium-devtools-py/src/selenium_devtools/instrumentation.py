@@ -297,6 +297,7 @@ _state: dict = {
     "test_rows": [],
     "test_started_ms": 0,
     "last_captured_ts": None,
+    "final_frame_driver": None,
     "final_frame_taken": False,
 }
 
@@ -497,6 +498,7 @@ def _maybe_capture_action_snapshot(
     mapped command as its initial frame. Reads and waits inherit the capture
     before them."""
     initial = _state["awaiting_initial_frame"] and command in MAPPED_COMMANDS
+    _note_final_frame_driver(driver)
     if command in READ_ONLY_COMMANDS and not initial:
         return
     if not _action_capture_enabled(driver):
@@ -504,6 +506,7 @@ def _maybe_capture_action_snapshot(
     if initial:
         _state["awaiting_initial_frame"] = False
     _state["last_captured_ts"] = timestamp
+    _state["final_frame_driver"] = weakref.ref(driver)
     snapshot = _capture_action_snapshot(driver, command, timestamp, shot)
     if not initial or _state["initial_frame_retried"]:
         return
@@ -540,6 +543,12 @@ def _final_frame_stamp(
     return (owner[0], last_captured_ts)
 
 
+def _note_final_frame_driver(driver: Any) -> None:
+    """Until a capture is taken, the test's stamp belongs to the driver that ran its latest row."""
+    if _state["last_captured_ts"] is None:
+        _state["final_frame_driver"] = weakref.ref(driver)
+
+
 def _capture_final_frame(driver: Any) -> bool:
     if not _action_capture_enabled(driver):
         return False
@@ -552,11 +561,14 @@ def _capture_final_frame(driver: Any) -> bool:
     snapshot = _capture_action_snapshot(driver, command, timestamp, _take_screenshot(driver))
     if snapshot is None:
         return False
+    superseded: dict = {}
+    for kept in _state["action_snapshots"]:
+        if kept["timestamp"] == timestamp and kept is not snapshot:
+            superseded.update(kept)
     _state["action_snapshots"][:] = [
-        kept
-        for kept in _state["action_snapshots"]
-        if kept["timestamp"] != timestamp or kept is snapshot
+        kept for kept in _state["action_snapshots"] if kept["timestamp"] != timestamp
     ]
+    _state["action_snapshots"].append({**superseded, **snapshot})
     _state["last_captured_ts"] = timestamp
     return True
 
@@ -567,17 +579,21 @@ def capture_final_frame(driver: Any = None) -> None:
 
     The last page-changing command can return before its navigation commits,
     so its capture shows the page it left; the reads after it saw the new one.
-    Once per test: the call report and the driver's quit both reach here.
+    Once per test: the call report and the driver's quit both reach here. Only
+    the driver that owns the stamp acts, so another session quitting mid-test
+    neither captures from nor consumes the test's one final frame.
     """
     if _state["final_frame_taken"]:
         return
-    for live in [driver] if driver is not None else list(_state["sessions"]):
-        try:
-            if _capture_final_frame(live):
-                _state["final_frame_taken"] = True
-                return
-        except Exception as exc:  # noqa: BLE001 — a missing end frame, not a failed run
-            _log.debug("final frame capture failed: %s", exc)
+    owner_ref = _state["final_frame_driver"]
+    owner = owner_ref() if owner_ref is not None else None
+    if owner is None or (driver is not None and driver is not owner):
+        return
+    try:
+        if _capture_final_frame(owner):
+            _state["final_frame_taken"] = True
+    except Exception as exc:  # noqa: BLE001 — a missing end frame, not a failed run
+        _log.debug("final frame capture failed: %s", exc)
 
 
 def reset_test_capture() -> None:
@@ -585,7 +601,7 @@ def reset_test_capture() -> None:
     _state.update(
         awaiting_initial_frame=True, initial_frame_retried=False,
         test_rows=[], test_started_ms=now_ms(),
-        last_captured_ts=None, final_frame_taken=False,
+        last_captured_ts=None, final_frame_driver=None, final_frame_taken=False,
     )
 
 
@@ -1163,6 +1179,7 @@ def install(
                 parent_id=wait_tracking.parent_of(poll),
             )
             wait_tracking.note_poll_row(poll, failed)
+            _note_final_frame_driver(self)
             _state["test_rows"].append(
                 (_capture_command(driver_command, params), failed["timestamp"])
             )
@@ -1223,7 +1240,7 @@ def install(
         a11y=a11y, element_scripts=None, page_scripts=None, action_snapshots=[],
         awaiting_initial_frame=True, initial_frame_retried=False,
         test_rows=[], test_started_ms=now_ms(), last_captured_ts=None,
-        final_frame_taken=False,
+        final_frame_driver=None, final_frame_taken=False,
     )
 
 

@@ -425,6 +425,49 @@ class TestTheEndOfATest(unittest.TestCase):
             instrumentation.capture_final_frame(driver)
             self.assertEqual(driver.scripts_run, reads, "the quit repeated the call report's capture")
 
+    def test_a_partial_final_capture_keeps_the_earlier_screenshot(self):
+        driver = self.Driver()
+        with self._ended():
+            instrumentation._state["test_rows"].append(("clickElement", 1200))
+            instrumentation._maybe_capture_action_snapshot(driver, "clickElement", 1200, "SHOT")
+            driver.tree = [{"selector": "#after"}]
+            self._step(driver, "getElementText", 1300)
+            with mock.patch.object(instrumentation, "_take_screenshot", return_value=None):
+                instrumentation.capture_final_frame(driver)
+            snaps = instrumentation.action_snapshots()
+        self.assertEqual(snaps[0]["screenshot"], "SHOT")
+        self.assertEqual(snaps[0]["elements"][0]["selector"], "#after")
+
+    def test_the_final_frame_comes_from_the_driver_that_captured_last(self):
+        owner, other = self.Driver(), self.Driver()
+        with self._ended():
+            self._step(owner, "clickElement", 1200)
+            before = owner.scripts_run
+            self._step(other, "getElementText", 1300)
+            instrumentation.capture_final_frame()
+            self.assertEqual(owner.scripts_run, before + 2, "the owner was not re-read")
+            self.assertEqual(other.scripts_run, 0, "a read on another driver took the frame")
+
+    def test_another_drivers_quit_leaves_the_final_frame_to_the_owner(self):
+        owner, other = self.Driver(), self.Driver()
+        with self._ended():
+            self._step(owner, "clickElement", 1200)
+            self._step(other, "getElementText", 1300)
+            instrumentation.capture_final_frame(other)
+            self.assertFalse(instrumentation._state["final_frame_taken"])
+            before = owner.scripts_run
+            instrumentation.capture_final_frame(owner)
+            self.assertEqual(owner.scripts_run, before + 2)
+            self.assertTrue(instrumentation._state["final_frame_taken"])
+
+    def test_window_and_aria_reads_take_no_capture(self):
+        driver = self.Driver()
+        with self._ended():
+            self._step(driver, "w3cGetCurrentWindowHandle", 1200)
+            self._step(driver, "getElementAriaRole", 1300)
+            self.assertEqual(driver.scripts_run, 0)
+            self.assertEqual(instrumentation.action_snapshots(), [])
+
     def test_a_row_before_the_test_started_does_not_stamp_it(self):
         self.assertIsNone(
             instrumentation._final_frame_stamp([("clickElement", 500)], 1000, None)

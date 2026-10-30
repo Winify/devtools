@@ -49,7 +49,12 @@ describe('skipsCapture', () => {
     'getCurrentUrl',
     'assert.equal',
     'expect.toHaveText',
-    'getElementText'
+    'getElementText',
+    'w3cGetCurrentWindowHandle',
+    'getElementAriaRole',
+    'isVisible',
+    'title',
+    'getDomAttribute'
   ])('is true for %s', (command) => {
     expect(skipsCapture(command)).toBe(true)
   })
