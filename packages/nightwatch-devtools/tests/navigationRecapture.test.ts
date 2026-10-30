@@ -132,4 +132,81 @@ describe('Nightwatch post-navigation re-capture', () => {
 
     expect(captureActionSnapshot).toHaveBeenCalledTimes(queued)
   })
+
+  it('attributes a navigation seen during a fill poll to the click that caused it', async () => {
+    let pageUrl = 'http://app.test/login'
+    let reads = 0
+    vi.mocked(captureActionSnapshot).mockImplementation(
+      async (_browser, command, timestamp) =>
+        shot({ command, timestamp, url: pageUrl, screenshot: pageUrl })
+    )
+    vi.mocked(webdriverExecute).mockImplementation(async () => {
+      reads++
+      if (reads === 2) {
+        void cap.captureCommand('click', ['#submit'], null, undefined, {
+          timestamp: 200
+        })
+        return 1000 as never
+      }
+      if (reads === 3) {
+        pageUrl = 'http://app.test/secure'
+        return 2000 as never
+      }
+      return 1000 as never
+    })
+
+    await cap.anchorAfterNavigation(browser)
+    await cap.captureCommand('setValue', ['#username'], 'tomsmith', undefined, {
+      timestamp: 100
+    })
+    await cap.anchorAfterNavigation(browser, 100)
+    await Promise.all(cap.snapshotCaptures)
+
+    expect(
+      vi
+        .mocked(captureActionSnapshot)
+        .mock.calls.map((call) => [call[1], call[2]])
+    ).toEqual([
+      ['setValue', 100],
+      ['click', 200],
+      ['click', 200]
+    ])
+    expect(cap.actionSnapshots.find((s) => s.timestamp === 100)).toMatchObject({
+      url: 'http://app.test/login',
+      screenshot: 'http://app.test/login'
+    })
+    expect(cap.actionSnapshots.find((s) => s.timestamp === 200)).toMatchObject({
+      url: 'http://app.test/secure',
+      screenshot: 'http://app.test/secure'
+    })
+  })
+
+  it('re-captures once when overlapping polls detect the same replacement', async () => {
+    let pageUrl = 'http://app.test/login'
+    vi.mocked(captureActionSnapshot).mockImplementation(
+      async (_browser, command, timestamp) =>
+        shot({ command, timestamp, url: pageUrl, screenshot: pageUrl })
+    )
+    vi.mocked(webdriverExecute).mockImplementation(
+      async () => (pageUrl === 'http://app.test/login' ? 1000 : 2000) as never
+    )
+
+    await cap.anchorAfterNavigation(browser)
+    await cap.captureCommand('click', ['#submit'], null, undefined, {
+      timestamp: 200
+    })
+    pageUrl = 'http://app.test/secure'
+    await Promise.all([
+      cap.anchorAfterNavigation(browser, 150),
+      cap.anchorAfterNavigation(browser, 180)
+    ])
+    await Promise.all(cap.snapshotCaptures)
+
+    expect(captureActionSnapshot).toHaveBeenCalledTimes(2)
+    expect(cap.actionSnapshots).toHaveLength(1)
+    expect(cap.actionSnapshots[0]).toMatchObject({
+      timestamp: 200,
+      url: 'http://app.test/secure'
+    })
+  })
 })

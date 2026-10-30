@@ -59,6 +59,8 @@ export class SessionCapturer extends SessionCapturerBase {
   #browser: NightwatchBrowser | undefined
   /** The most recent page-changing capture; read synchronously when a navigation is detected for its command. */
   #lastPageCapture: QueuedPageCapture | undefined
+  /** Capture timestamps already re-captured or re-capturing; overlapping polls see the same replacement. */
+  #lastRecapturedAt?: number
 
   // True once BiDi inspectors are attached — the per-command perf-log network
   // capture path skips when set, so we don't double-emit network requests.
@@ -463,11 +465,6 @@ export class SessionCapturer extends SessionCapturerBase {
     if (this.isNativeAppSession) {
       return
     }
-    // Read before the first await: the capture is whichever one the triggering command queued.
-    const queued =
-      timestamp !== undefined && this.#lastPageCapture?.timestamp === timestamp
-        ? this.#lastPageCapture
-        : undefined
     const before = this.lastDocumentOrigin
     const replaced = await pollUntilReady(
       async () => {
@@ -484,17 +481,28 @@ export class SessionCapturer extends SessionCapturerBase {
       return
     }
     // Only a change from an origin this capturer already saw is a navigation; the
-    // first observation has no baseline to have changed from.
-    const recapture =
-      queued && before !== undefined
-        ? recaptureAfterNavigation({
-            browser,
-            runner: this.runner,
-            native: this.isNativeAppSession,
-            snapshots: this.actionSnapshots,
-            queued
-          })
-        : Promise.resolve()
+    // first observation has no baseline to have changed from. The newest page
+    // capture is read here, after the poll: the click that caused the navigation
+    // may have queued its capture while this poll was running, and the fill that
+    // started the poll must never be re-stamped with the destination.
+    const queued = this.#lastPageCapture
+    let recapture: Promise<void> = Promise.resolve()
+    if (
+      timestamp !== undefined &&
+      queued &&
+      before !== undefined &&
+      queued.timestamp >= timestamp &&
+      queued.timestamp !== this.#lastRecapturedAt
+    ) {
+      this.#lastRecapturedAt = queued.timestamp
+      recapture = recaptureAfterNavigation({
+        browser,
+        runner: this.runner,
+        native: this.isNativeAppSession,
+        snapshots: this.actionSnapshots,
+        queued
+      })
+    }
     // captureTrace's own recovery injects into the fresh document and re-drains,
     // and it gates that on the url being worth instrumenting — so a torn-down
     // session falls out here rather than logging an injection failure.
