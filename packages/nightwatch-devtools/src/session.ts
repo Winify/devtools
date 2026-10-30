@@ -24,6 +24,10 @@ import {
   skipsCapture
 } from '@wdio/devtools-shared'
 import { captureActionSnapshot } from './action-snapshot.js'
+import {
+  recaptureAfterNavigation,
+  type QueuedPageCapture
+} from './navigation-recapture.js'
 import { nightwatchRunnerId } from './helpers/utils.js'
 import { NAVIGATION_COMMANDS } from './constants.js'
 import {
@@ -53,6 +57,8 @@ const log = logger('@wdio/nightwatch-devtools:SessionCapturer')
 
 export class SessionCapturer extends SessionCapturerBase {
   #browser: NightwatchBrowser | undefined
+  /** The most recent page-changing capture; read synchronously when a navigation is detected for its command. */
+  #lastPageCapture: QueuedPageCapture | undefined
 
   // True once BiDi inspectors are attached — the per-command perf-log network
   // capture path skips when set, so we don't double-emit network requests.
@@ -211,29 +217,31 @@ export class SessionCapturer extends SessionCapturerBase {
     }
     this.lastCapturedTimestamp = timestamp
     const generation = this.testCaptureGeneration
-    this.snapshotCaptures.push(
-      captureActionSnapshot(
-        this.#browser,
-        command,
-        timestamp,
-        this.runner,
-        this.isNativeAppSession
-      ).then((snap) => {
-        if (snap) {
-          upsertRichestSnapshot(this.actionSnapshots, snap)
-        }
-        // A capture resolving after resetTestCapture() belongs to the previous test.
-        if (
-          initialFrame &&
-          !snap?.screenshot &&
-          !this.initialFrameRetried &&
-          generation === this.testCaptureGeneration
-        ) {
-          this.initialFrameRetried = true
-          this.awaitingInitialFrame = true
-        }
-      })
-    )
+    const settled = captureActionSnapshot(
+      this.#browser,
+      command,
+      timestamp,
+      this.runner,
+      this.isNativeAppSession
+    ).then((snap) => {
+      if (snap) {
+        upsertRichestSnapshot(this.actionSnapshots, snap)
+      }
+      // A capture resolving after resetTestCapture() belongs to the previous test.
+      if (
+        initialFrame &&
+        !snap?.screenshot &&
+        !this.initialFrameRetried &&
+        generation === this.testCaptureGeneration
+      ) {
+        this.initialFrameRetried = true
+        this.awaitingInitialFrame = true
+      }
+    })
+    this.snapshotCaptures.push(settled)
+    if (pageChanging) {
+      this.#lastPageCapture = { command, timestamp, settled }
+    }
   }
 
   async #capturePerformanceData(
@@ -446,12 +454,20 @@ export class SessionCapturer extends SessionCapturerBase {
    * of a run anchors unconditionally rather than guessing — `captureCurrentDom`
    * is idempotent per document, so an already-anchored page costs one drain.
    */
-  async anchorAfterNavigation(browser: NightwatchBrowser): Promise<void> {
+  async anchorAfterNavigation(
+    browser: NightwatchBrowser,
+    timestamp?: number
+  ): Promise<void> {
     // Polls the page for its own document identity, so there is nothing to
     // poll and nothing to anchor without one.
     if (this.isNativeAppSession) {
       return
     }
+    // Read before the first await: the capture is whichever one the triggering command queued.
+    const queued =
+      timestamp !== undefined && this.#lastPageCapture?.timestamp === timestamp
+        ? this.#lastPageCapture
+        : undefined
     const before = this.lastDocumentOrigin
     const replaced = await pollUntilReady(
       async () => {
@@ -467,6 +483,18 @@ export class SessionCapturer extends SessionCapturerBase {
     if (!replaced) {
       return
     }
+    // Only a change from an origin this capturer already saw is a navigation; the
+    // first observation has no baseline to have changed from.
+    const recapture =
+      queued && before !== undefined
+        ? recaptureAfterNavigation({
+            browser,
+            runner: this.runner,
+            native: this.isNativeAppSession,
+            snapshots: this.actionSnapshots,
+            queued
+          })
+        : Promise.resolve()
     // captureTrace's own recovery injects into the fresh document and re-drains,
     // and it gates that on the url being worth instrumenting — so a torn-down
     // session falls out here rather than logging an injection failure.
@@ -484,7 +512,10 @@ export class SessionCapturer extends SessionCapturerBase {
     // the one that caused it. The guard exists for the case where that is a guess.
     // A wait sent running is newest from its start, but it has not ended, so it
     // did not cause the navigation.
-    await this.captureTrace(browser, true, this.#newestEndedTimestamp())
+    await Promise.all([
+      this.captureTrace(browser, true, this.#newestEndedTimestamp()),
+      recapture
+    ])
   }
 
   /**
