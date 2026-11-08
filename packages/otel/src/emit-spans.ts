@@ -77,12 +77,12 @@ function startActionSpan(
     },
     parent
   )
-  if (command.error) {
+  if (info.failure) {
     span.setStatus({
       code: SpanStatusCode.ERROR,
-      message: command.error.message
+      message: info.failure.message
     })
-    span.recordException({ message: command.error.message })
+    span.recordException({ message: info.failure.message })
   }
   span.end(new Date(Math.max(command.timestamp, actionStart(command))))
 }

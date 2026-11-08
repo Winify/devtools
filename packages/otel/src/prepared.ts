@@ -10,6 +10,7 @@ export interface ActionInfo {
   command: CommandLog
   key: string
   ordinal: number
+  failure: { message: string } | undefined
 }
 
 export interface Bounds {

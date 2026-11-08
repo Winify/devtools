@@ -5,10 +5,12 @@ import {
   trace,
   type Context
 } from '@opentelemetry/api'
-import type {
-  CommandLog,
-  TraceActionChild,
-  TracePlayerData
+import {
+  effectiveFailure,
+  retriedRows,
+  type CommandLog,
+  type TraceActionChild,
+  type TracePlayerData
 } from '@wdio/devtools-shared'
 import * as attr from './attributes.js'
 import {
@@ -90,9 +92,15 @@ function actionInfos(commands: CommandLog[]): ActionInfo[] {
       (a, b) =>
         actionStart(a.command) - actionStart(b.command) || a.index - b.index
     )
+  const retried = retriedRows(commands)
   const infos = new Array<ActionInfo>(commands.length)
   chronological.forEach(({ command, index }, ordinal) => {
-    infos[index] = { command, key: actionKey(command), ordinal }
+    infos[index] = {
+      command,
+      key: actionKey(command),
+      ordinal,
+      failure: effectiveFailure(command, retried)
+    }
   })
   return infos
 }
@@ -307,7 +315,7 @@ function failedActionOf(
     return undefined
   }
   return actions
-    .filter((action) => action.command.error)
+    .filter((action) => action.failure)
     .sort((a, b) => a.ordinal - b.ordinal)[0]
 }
 
@@ -324,7 +332,7 @@ function prepareTest(
     : undefined
   const evidence: TraceEvidence | undefined =
     data && span ? { data, actions, failure, span } : undefined
-  const errorMessage = test.error ?? failure?.command.error?.message
+  const errorMessage = test.error ?? failure?.failure?.message
   const durationMs = durationOf(test, span)
   const finalAttributes = testAttributes(
     test,
