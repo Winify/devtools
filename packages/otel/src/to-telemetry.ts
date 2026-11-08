@@ -403,13 +403,14 @@ function planManifest(
       artifact.testUids.filter((uid) => testUids.has(uid)).length > 1
     if (sharedZip && input.traceZips && !warnedSharedZip) {
       input.warn(
-        `skipped traces in ${file}: traceGranularity:'test' is required for traces, so its zips cover several tests`
+        `skipped action spans in ${file}: its zips cover several tests, so they are linked but not read; record with traceGranularity:'test' for per-test action spans`
       )
       warnedSharedZip = true
     }
-    // A dropped zip (retained:false) has no file to link to.
-    const linked = !sharedZip && artifact?.retained ? artifact : undefined
-    const zipPath = linked ? path.resolve(dir, linked.path) : undefined
+    // A dropped zip (retained:false) has no file to link to; a shared one still replays the test among others.
+    const zipPath = artifact?.retained
+      ? path.resolve(dir, artifact.path)
+      : undefined
     const artifactUrl =
       zipPath && input.artifactBaseUrl
         ? artifactUrlFor(dir, zipPath, input.artifactBaseUrl, input.warn)
@@ -418,7 +419,10 @@ function planManifest(
       prepareTest(
         test,
         {
-          data: input.traceZips && zipPath ? readTrace(zipPath) : undefined,
+          data:
+            input.traceZips && zipPath && !sharedZip
+              ? readTrace(zipPath)
+              : undefined,
           artifactUrl
         },
         run

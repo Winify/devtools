@@ -22,7 +22,7 @@ Every manifest you pass is pushed as one run. Use `--run-id` to name the run in 
 
 Record with `mode: 'telemetry'` when you want only the telemetry. It runs no backend, opens no window and captures no per-action state. It writes the artifacts manifest and no zips, which is all `devtools-otel` needs without `--trace-zips`.
 
-Use `mode: 'trace'` with `traceGranularity: 'test'` when you also want the actions as child spans. Each test then gets its own zip, and `--trace-zips` reads it. With session or spec granularity the zips are shared, so those tests get their root span but no action spans (with a warning). `tracePolicy: 'on'` keeps every zip. In trace mode the manifest is written only with `emitArtifactsManifest: true`; WebdriverIO also writes it when `@wdio/allure-reporter` is configured and Selenium when an allure-js-commons runtime is active, Nightwatch only with the option. Under a retain policy the zips of passing tests are dropped; the push still covers those tests, and the dropped zips are simply not linked or read.
+Use `mode: 'trace'` with `traceGranularity: 'test'` when you also want the actions as child spans. Each test then gets its own zip, and `--trace-zips` reads it. With session or spec granularity the zips are shared: those tests still get their root span and, with `--artifact-base-url`, the shared zip's URL, but no action spans (`--trace-zips` warns once per manifest). `tracePolicy: 'on'` keeps every zip. In trace mode the manifest is written only with `emitArtifactsManifest: true`; WebdriverIO also writes it when `@wdio/allure-reporter` is configured and Selenium when an allure-js-commons runtime is active, Nightwatch only with the option. Under a retain policy the zips of passing tests are dropped; the push still covers those tests, and the dropped zips are simply not linked or read.
 
 ## Configuration
 
@@ -87,7 +87,7 @@ These become filterable resource attributes on every span. Give each project its
 | `error.message` | root span | For a failed final attempt: the manifest's failure message when present, else the first failing action's error (with `--trace-zips`). Never set on an earlier attempt, and never from a passing test's caught or retried command. A longer message is truncated to 4096 characters followed by `…`; the same applies to a failing action span's status and exception message |
 | `devtools.failed_action` | root span | For a failed test: key of the first failing action in the final attempt's zip. Needs `--trace-zips`; absent on a passing test |
 | `devtools.run.id` | root span | Run identity |
-| `devtools.artifact.url` | root span | URL of the final attempt's trace zip, when `--artifact-base-url` is set and the zip was not dropped by a retain policy |
+| `devtools.artifact.url` | root span | URL of the final attempt's trace zip, when `--artifact-base-url` is set and the zip was not dropped by a retain policy. At session or spec granularity the zip is shared with the other tests it covers |
 | `devtools.action.key` | action span | Method plus its normalized selector; stable across runs, so passing and failing runs line up |
 | `devtools.action.index` | action span | Ordinal of the action within the test |
 | `devtools.action.method` | action span | The command the action ran |
