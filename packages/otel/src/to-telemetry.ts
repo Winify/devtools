@@ -423,19 +423,17 @@ export function planPush(input: PushInput): PushPlan {
   return {
     unreadable: () => reader.unreadable(),
     async emit(sink) {
-      let pushed = 0
       for (const prepare of pending) {
         emitPrepared(sink, prepare())
-        try {
-          await sink.flush()
-        } catch (error) {
-          throw new Error(
-            `${pushed} of ${pending.length} test(s) were pushed before the export failed: ${describe(error)}`
-          )
-        }
-        pushed++
       }
-      return pushed
+      try {
+        await sink.flush()
+      } catch (error) {
+        throw new Error(
+          `the export of ${pending.length} test(s) failed, so some may not have reached the collector: ${describe(error)}`
+        )
+      }
+      return pending.length
     }
   }
 }

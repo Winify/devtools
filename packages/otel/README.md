@@ -16,7 +16,7 @@ devtools-otel push out/devtools-artifacts-*.json \
 | `--trace-zips` | Read each test's final-attempt trace zip and push its actions as child spans. Off by default, so the CLI reads no zip. A zip that is missing or unreadable warns and skips that test's actions; the rest of the push goes ahead, and the CLI then exits 1 naming each unreadable zip. |
 | `--dry-run` | Print spans to stdout instead of exporting. Needs no collector. |
 
-Every manifest you pass is pushed as one run. Use `--run-id` to name the run in CI. An input problem that stops the whole push (a manifest that is not JSON or not an artifacts manifest) fails before anything is exported: every problem is listed and the exit is non-zero. An export failure mid-run is a partial push: the tests before the failed one are already pushed, the error reports the count (`<n> of <total> test(s) were pushed before the export failed`), and the exit is non-zero. Rerunning after fixing the collector pushes the whole set again, so the already-pushed spans are sent twice.
+Every manifest you pass is pushed as one run. Use `--run-id` to name the run in CI. An input problem that stops the whole push (a manifest that is not JSON or not an artifacts manifest) fails before anything is exported: every problem is listed and the exit is non-zero. Spans are exported in batches and flushed once at the end, so an export failure can be a partial push: the error names the run size (`the export of <total> test(s) failed`), the exit is non-zero, and some batches may already have reached the collector. Rerunning after fixing the collector pushes the whole set again, so any span already pushed is sent twice.
 
 ## Recording side
 
