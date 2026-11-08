@@ -31,6 +31,8 @@ export interface AttemptView {
   state: string | undefined
   ids: PinnedSpanIds | undefined
   timing: Bounds | undefined
+  /** End minus start of a recorded attempt; absent when the record has no end. */
+  durationMs: number | undefined
   final: boolean
 }
 

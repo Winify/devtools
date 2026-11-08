@@ -82,8 +82,8 @@ These become filterable resource attributes on every span. Give each project its
 | `test.case.result.status` | root span | `pass` or `fail`; other states pass through. A root span takes its attempt's state |
 | `devtools.test.attempt` | root span | Attempt number |
 | `devtools.test.final_attempt` | root span | `true` on the root of the test's final attempt, `false` on each earlier attempt's root. Filter on it to count a test once |
-| `devtools.duration_ms` | root span | The framework-reported duration when the manifest has one; else the test's `endTime` minus `startTime`; else first action or group start to last action or group end under `--trace-zips` (absent without any of these) |
-| `devtools.time_source` | root span | Where the root's timing came from: `manifest` (the manifest's `endTime`), `trace` (the zip's first action, with `--trace-zips`), or `manifest-file` (the manifest file's mtime, when neither exists). A final root span carries this value; an earlier attempt's root is always `manifest`, since its timing comes from the manifest |
+| `devtools.duration_ms` | root span | On the final attempt: the framework-reported duration when the manifest has one; else the test's `endTime` minus `startTime`; else its attempt record's `endTime` minus `startTime`; else first action or group start to last action or group end under `--trace-zips` (absent without any of these). On an earlier attempt: its attempt record's `endTime` minus `startTime` |
+| `devtools.time_source` | root span | Where the root's timing came from: `manifest` (the test's or its attempt record's times), `trace` (the zip's first action, with `--trace-zips`), or `manifest-file` (the manifest file's mtime, when neither exists) |
 | `error.message` | root span | For a failed final attempt: the manifest's failure message when present, else the first failing action's error (with `--trace-zips`). Never set on an earlier attempt, and never from a passing test's caught or retried command. A longer message is truncated to 4096 characters followed by `…`; the same applies to a failing action span's status and exception message |
 | `devtools.failed_action` | root span | For a failed test: key of the first failing action in the final attempt's zip. Needs `--trace-zips`; absent on a passing test |
 | `devtools.run.id` | root span | Run identity |
@@ -110,7 +110,7 @@ Cucumber steps are not tests: the manifest lists only scenarios, so a step gets 
 
 A root span starts and ends at its attempt's `startTime` and `endTime` in the manifest. A manifest from before attempts existed uses the test's own timing instead: its `startTime`, `endTime` and `durationMs`. Under `--trace-zips`, a root is widened to cover the zip's actions, so every action falls inside its root. A root with no timing at all is zero-width at the manifest file's mtime. The SDK never stamps push time.
 
-Only the WDIO service writes per-test timing (`endTime`, `durationMs`) into the manifest. For a manifest from any other adapter, a test with no timing and no zip read starts at the manifest file's mtime (`devtools.time_source=manifest-file`), and every test in that file gets the same start time.
+Only the WDIO service writes per-test timing (`endTime`, `durationMs`) into the manifest. For a manifest from any other adapter each root is timed from its attempt record, which every adapter writes; a test with neither starts at the manifest file's mtime (`devtools.time_source=manifest-file`).
 
 ## Attempts
 

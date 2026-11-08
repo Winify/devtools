@@ -75,7 +75,7 @@ interface PreparedFacts {
   run: RunContext
   span: Bounds | undefined
   evidence: TraceEvidence | undefined
-  finalAttributes: Record<string, string | number>
+  finalExtra: Record<string, string | number>
   errorMessage: string | undefined
 }
 
@@ -216,26 +216,32 @@ function rootBounds(
   return timing && span ? union(timing, span) : base
 }
 
-function timeSourceOf(test: ManifestTest, span: Bounds | undefined): string {
-  if (test.endTime !== undefined) {
-    return attr.TIME_SOURCE_MANIFEST
-  }
-  return span ? attr.TIME_SOURCE_TRACE : attr.TIME_SOURCE_MANIFEST_FILE
-}
-
-function durationOf(
+// The test's own timing describes its final attempt only, so an earlier attempt reads its record alone.
+function timingAttributes(
   test: ManifestTest,
+  view: AttemptView,
   span: Bounds | undefined
-): number | undefined {
-  const manifestDurationMs =
-    test.startTime !== undefined && test.endTime !== undefined
-      ? test.endTime - test.startTime
-      : undefined
-  return (
-    test.durationMs ??
-    manifestDurationMs ??
-    (span ? span.endMs - span.startMs : undefined)
-  )
+): Record<string, string | number> {
+  const manifestMs = view.final
+    ? (test.durationMs ??
+      (test.startTime !== undefined && test.endTime !== undefined
+        ? test.endTime - test.startTime
+        : undefined) ??
+      view.durationMs)
+    : view.durationMs
+  const durationMs =
+    manifestMs ?? (view.final && span ? span.endMs - span.startMs : undefined)
+  const timeSource = view.timing
+    ? attr.TIME_SOURCE_MANIFEST
+    : view.final && span
+      ? attr.TIME_SOURCE_TRACE
+      : attr.TIME_SOURCE_MANIFEST_FILE
+  return {
+    ...(durationMs !== undefined
+      ? { [attr.ATTR_DURATION_MS]: durationMs }
+      : {}),
+    [attr.ATTR_TIME_SOURCE]: timeSource
+  }
 }
 
 function attemptViews(test: ManifestTest): AttemptView[] {
@@ -246,6 +252,7 @@ function attemptViews(test: ManifestTest): AttemptView[] {
         state: test.state,
         ids: undefined,
         timing: testBounds(test),
+        durationMs: undefined,
         final: true
       }
     ]
@@ -263,6 +270,10 @@ function attemptViews(test: ManifestTest): AttemptView[] {
         startMs: record.startTime,
         endMs: record.endTime ?? record.startTime
       },
+      durationMs:
+        record.endTime === undefined
+          ? undefined
+          : record.endTime - record.startTime,
       final
     }
   })
@@ -296,18 +307,12 @@ function parentContextOf(
 }
 
 function prepareRoot(view: AttemptView, facts: PreparedFacts): PreparedRoot {
-  const { test, run, span, evidence, finalAttributes, errorMessage } = facts
+  const { test, run, span, evidence, finalExtra, errorMessage } = facts
   const label = `${test.uid} attempt ${view.attempt}`
-  const attributes = view.final
-    ? finalAttributes
-    : testAttributes(test, run.runId, view.state, view.attempt, {
-        ...(view.timing
-          ? {
-              [attr.ATTR_DURATION_MS]: view.timing.endMs - view.timing.startMs,
-              [attr.ATTR_TIME_SOURCE]: attr.TIME_SOURCE_MANIFEST
-            }
-          : { [attr.ATTR_TIME_SOURCE]: attr.TIME_SOURCE_MANIFEST_FILE })
-      })
+  const attributes = testAttributes(test, run.runId, view.state, view.attempt, {
+    ...timingAttributes(test, view, span),
+    ...(view.final ? finalExtra : {})
+  })
   return {
     attributes: { ...attributes, [attr.ATTR_TEST_FINAL_ATTEMPT]: view.final },
     bounds: rootBounds(view.timing, view.final ? span : undefined, run.mtimeMs),
@@ -352,24 +357,13 @@ function prepareTest(
   const span = evidence?.span
   const errorMessage =
     test.error === undefined ? failure?.failure?.message : capLength(test.error)
-  const durationMs = durationOf(test, span)
-  const finalAttributes = testAttributes(
-    test,
-    run.runId,
-    test.state,
-    test.attempt,
-    {
-      ...(durationMs !== undefined
-        ? { [attr.ATTR_DURATION_MS]: durationMs }
-        : {}),
-      [attr.ATTR_TIME_SOURCE]: timeSourceOf(test, span),
-      ...(errorMessage !== undefined
-        ? { [attr.ATTR_ERROR_MESSAGE]: errorMessage }
-        : {}),
-      ...(failure ? { [attr.ATTR_FAILED_ACTION]: failure.key } : {}),
-      ...(artifactUrl ? { [attr.ATTR_ARTIFACT_URL]: artifactUrl } : {})
-    }
-  )
+  const finalExtra = {
+    ...(errorMessage !== undefined
+      ? { [attr.ATTR_ERROR_MESSAGE]: errorMessage }
+      : {}),
+    ...(failure ? { [attr.ATTR_FAILED_ACTION]: failure.key } : {}),
+    ...(artifactUrl ? { [attr.ATTR_ARTIFACT_URL]: artifactUrl } : {})
+  }
   return {
     test,
     roots: attemptViews(test).map((view) =>
@@ -378,7 +372,7 @@ function prepareTest(
         run,
         span,
         evidence,
-        finalAttributes,
+        finalExtra,
         errorMessage
       })
     )
