@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   formatTraceparent,
+  isSpanId,
+  isTraceId,
   parseTraceparent,
+  randomSpanId,
+  randomTraceId,
   TRACE_CONTEXT_ENV
 } from '../src/trace-context.js'
 
@@ -81,5 +85,16 @@ describe('traceparent', () => {
       TRACEPARENT: 'TRACEPARENT',
       TRACESTATE: 'TRACESTATE'
     })
+  })
+})
+
+describe('random ids', () => {
+  it('draws valid, distinct trace and span ids', () => {
+    const traceIds = new Set(Array.from({ length: 50 }, randomTraceId))
+    const spanIds = new Set(Array.from({ length: 50 }, randomSpanId))
+    expect(traceIds.size).toBe(50)
+    expect(spanIds.size).toBe(50)
+    expect([...traceIds].every(isTraceId)).toBe(true)
+    expect([...spanIds].every(isSpanId)).toBe(true)
   })
 })
