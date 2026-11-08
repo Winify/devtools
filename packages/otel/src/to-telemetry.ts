@@ -105,6 +105,14 @@ function actionInfos(commands: CommandLog[]): ActionInfo[] {
   return infos
 }
 
+const MAX_ERROR_MESSAGE_LENGTH = 4096
+
+function capLength(message: string | undefined): string | undefined {
+  return message && message.length > MAX_ERROR_MESSAGE_LENGTH
+    ? `${message.slice(0, MAX_ERROR_MESSAGE_LENGTH)}…`
+    : message
+}
+
 function status(state: string): string {
   if (state === STATE_PASSED) {
     return attr.TEST_CASE_RESULT_STATUS_PASS
@@ -336,7 +344,7 @@ function prepareTest(
       }
     : undefined
   const span = evidence?.span
-  const errorMessage = test.error ?? failure?.failure?.message
+  const errorMessage = capLength(test.error ?? failure?.failure?.message)
   const durationMs = durationOf(test, span)
   const finalAttributes = testAttributes(
     test,
