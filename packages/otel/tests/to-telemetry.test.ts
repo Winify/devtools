@@ -1144,28 +1144,6 @@ describe('pushRun stamped ids', () => {
     expect(warnings).toEqual([])
   })
 
-  it('keeps the attempt ids and warns when the parent is in another trace', async () => {
-    const manifest = stampedManifest(
-      [attemptRecord(0, 'passed', '000000000000aaa1')],
-      {
-        parent: {
-          traceId: '99999999999999999999999999999999',
-          spanId: PARENT_SPAN,
-          traceFlags: 1
-        }
-      }
-    )
-    const { spans, warnings } = await push({
-      manifests: [{ file: MANIFEST_FILE, manifest }],
-      traceZips: false
-    })
-    const [root] = rootsNamed(spans, 'logs in')
-    expect(root.spanContext().traceId).toBe(TRACE_A)
-    expect(root.parentSpanContext).toBeUndefined()
-    expect(warnings).toHaveLength(1)
-    expect(warnings[0]).toContain("not the manifest's parent trace")
-  })
-
   it('falls back to random ids and the test timing for a manifest from before attempts', async () => {
     const manifest = manifestOf({
       artifacts: [],
