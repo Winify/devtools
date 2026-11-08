@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { IdGenerator } from '@opentelemetry/sdk-trace'
 import {
-  isSpanId,
   randomSpanId,
   randomTraceId,
   SPAN_ID_BYTES
@@ -29,11 +28,10 @@ export class PinnedIdGenerator implements IdGenerator {
   }
 }
 
-/** A child span's id is a function of its root's id, so re-pushing a manifest mints the same ids. */
+/** A child span's id is a function of its root's id, so re-pushing a manifest mints the same ids; an all-zero prefix, the one invalid id, has odds of 2^-64. */
 export function derivedSpanId(rootSpanId: string, key: string): string {
-  const digest = createHash('sha256')
+  return createHash('sha256')
     .update(`${rootSpanId}:${key}`)
     .digest('hex')
-  const id = digest.slice(0, SPAN_ID_BYTES * 2)
-  return isSpanId(id) ? id : `${digest.slice(0, SPAN_ID_BYTES * 2 - 1)}1`
+    .slice(0, SPAN_ID_BYTES * 2)
 }
