@@ -943,12 +943,12 @@ describe('pushRun error message', () => {
         }
       ]
     })
-    const { logs } = await push({
+    const { spans } = await push({
       manifests: [{ file: MANIFEST_FILE, manifest }]
     })
-    expect(logs[0].attributes[attr.ATTR_ERROR_MESSAGE]).toBe(
-      `${'x'.repeat(4096)}…`
-    )
+    expect(
+      byName(spans, 'long failure').attributes[attr.ATTR_ERROR_MESSAGE]
+    ).toBe(`${'x'.repeat(4096)}…`)
   })
 })
 
