@@ -58,7 +58,7 @@ function startActionSpan(
   info: ActionInfo,
   parent: Context,
   rootSpanId: string
-): void {
+): Span {
   const { command } = info
   const span = startPinned(
     sink,
@@ -85,6 +85,7 @@ function startActionSpan(
     span.recordException({ message: info.failure.message })
   }
   span.end(new Date(Math.max(command.timestamp, actionStart(command))))
+  return span
 }
 
 function emitTree(
@@ -115,7 +116,20 @@ function emitTree(
       )
       span.end(new Date(child.group.endTime))
     } else {
-      startActionSpan(sink, actions[child.commandIndex], parent, rootSpanId)
+      const span = startActionSpan(
+        sink,
+        actions[child.commandIndex],
+        parent,
+        rootSpanId
+      )
+      emitTree(
+        sink,
+        child.children ?? [],
+        actions,
+        trace.setSpan(parent, span),
+        rootSpanId,
+        `c${child.commandIndex}:`
+      )
     }
   })
 }
