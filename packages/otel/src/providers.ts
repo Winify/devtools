@@ -4,7 +4,8 @@ import {
   ConsoleSpanExporter,
   SimpleSpanProcessor,
   TracerProvider,
-  type ReadableSpan
+  type ReadableSpan,
+  type SpanExporter
 } from '@opentelemetry/sdk-trace'
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
 import {
@@ -18,6 +19,15 @@ import { PinnedIdGenerator } from './span-ids.js'
 const SCOPE_NAME = '@wdio/devtools-otel'
 const DEFAULT_SERVICE_NAME = 'devtools-tests'
 const EXPORT_SUCCESS_CODE = 0
+
+// A push emits the whole run synchronously and flushes once, so a bounded queue (2048 by default) silently drops the overflow.
+const BATCH_LIMITS = { maxQueueSize: Number.MAX_SAFE_INTEGER }
+
+export function batchedProcessors(
+  spanExporter: SpanExporter
+): BatchSpanProcessor {
+  return new BatchSpanProcessor({ exporter: spanExporter, ...BATCH_LIMITS })
+}
 
 /**
  * The batch processor discards a failed export, so the exporter records its
@@ -64,9 +74,7 @@ export function createTelemetry(options: { dryRun: boolean }): Telemetry {
     spanProcessors: [
       options.dryRun
         ? new SimpleSpanProcessor({ exporter: new ConsoleSpanExporter() })
-        : new BatchSpanProcessor({
-            exporter: new FailureRecordingTraceExporter(failures)
-          })
+        : batchedProcessors(new FailureRecordingTraceExporter(failures))
     ]
   })
   return {
