@@ -1245,6 +1245,36 @@ describe('pushRun final attempt marker', () => {
     ])
   })
 
+  it('times every root from its own attempt record when the test carries no timing', async () => {
+    const { spans } = await push({
+      manifests: [{ file: MANIFEST_FILE, manifest: failThenPass() }],
+      traceZips: false
+    })
+    expect(
+      rootsNamed(spans, 'logs in').map((root) => [
+        root.attributes[attr.ATTR_TEST_FINAL_ATTEMPT],
+        root.attributes[attr.ATTR_DURATION_MS],
+        root.attributes[attr.ATTR_TIME_SOURCE]
+      ])
+    ).toEqual([
+      [false, 500, attr.TIME_SOURCE_MANIFEST],
+      [true, 500, attr.TIME_SOURCE_MANIFEST]
+    ])
+  })
+
+  it("labels the final root with its own record's attempt", async () => {
+    const manifest = failThenPass()
+    manifest.tests[0].attempt = 0
+    const { spans } = await push({
+      manifests: [{ file: MANIFEST_FILE, manifest }],
+      traceZips: false
+    })
+    const final = rootsNamed(spans, 'logs in').find(
+      (root) => root.attributes[attr.ATTR_TEST_FINAL_ATTEMPT] === true
+    )
+    expect(final?.attributes[attr.ATTR_TEST_ATTEMPT]).toBe(1)
+  })
+
   it('marks the record the writer stamped final', async () => {
     const manifest = manifestOf({
       artifacts: [],
