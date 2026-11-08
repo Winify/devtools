@@ -65,6 +65,8 @@ Set `mode: 'trace'` to skip the live UI window and write a portable `trace.zip`
 `test-results/` directory at session end — meant for CI, offline replay, and
 agentic diffing. See the [full trace mode docs](https://webdriver.io/docs/devtools/wdio/trace-mode).
 
+Set `mode: 'telemetry'` to record nothing but the run's outcome: no backend, UI window, screencast, per-action capture or zip. It still runs the test lifecycle and writes a `devtools-artifacts-<sessionId>.json` manifest at session end, with each test's state and the trace id of every attempt, so reporters and CI can link a run to its traces without paying for them.
+
 Open a trace in the first-party player:
 
 ```sh
@@ -268,7 +270,7 @@ services: [['devtools', options]]
 | `hostname` | `string` | `'localhost'` | Hostname the DevTools UI server binds to |
 | `devtoolsCapabilities` | `Capabilities` | Chrome 1600×1200 | Capabilities used to open the DevTools UI window |
 | `screencast` | `ScreencastOptions` | — | Session video recording (live mode only — see below; for trace mode use `video`) |
-| `mode` | `'live' \| 'trace'` | `'live'` | `'live'` opens the DevTools UI window; `'trace'` skips the UI and writes a `trace-<sessionId>.zip` under a `test-results/` directory (base dir resolved from the test file's dir → config dir → cwd) at session end. See [Trace mode](../../README.md#-trace-mode-tracezip) |
+| `mode` | `'live' \| 'trace' \| 'telemetry'` | `'live'` | `'live'` opens the DevTools UI window; `'trace'` skips the UI and writes a `trace-<sessionId>.zip` under a `test-results/` directory (base dir resolved from the test file's dir → config dir → cwd) at session end. `'telemetry'` skips the UI and captures nothing per action, writing only the artifacts manifest (per-attempt trace ids, no zips). See [Trace mode](../../README.md#-trace-mode-tracezip) |
 | `traceFormat` | `'zip' \| 'ndjson-directory'` | `'zip'` | Trace mode only. Output layout — `'zip'` writes a single archive; `'ndjson-directory'` unpacks the same files into `trace-<id>/` (one less unzip step for scripted/agentic consumers). The `zip` opens in `show-trace`; a directory opens in other compatible viewers, or zip it first. |
 | `traceGranularity` | `'session' \| 'spec' \| 'test'` | `'session'` | Trace mode only. How traces are partitioned — one per worker session / spec file / test. `'test'` is required for per-test Allure attachments (trace, screenshot, video). |
 | `tracePolicy` | `TraceRetentionPolicy` | `'on'` | Trace mode only. Which traces to keep: `'on'` \| `'retain-on-failure'` \| `'retain-on-first-failure'` \| `'on-first-retry'` \| `'on-all-retries'` \| `'retain-on-failure-and-retries'`. The retry-aware policies pair best with `traceGranularity: 'test'`. |

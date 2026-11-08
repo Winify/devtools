@@ -1,32 +1,39 @@
 import path from 'node:path'
 import {
   ROOT_CONTEXT,
-  SpanStatusCode,
+  createTraceState,
   trace,
-  type Context,
-  type Span,
-  type Tracer
+  type Context
 } from '@opentelemetry/api'
-import { SeverityNumber, type Logger } from '@opentelemetry/api-logs'
-import { parseTraceZip } from '@wdio/devtools-trace/trace-reader'
-import {
-  effectiveFailure,
-  retriedRows,
-  type CommandLog,
-  type NetworkRequest,
-  type TraceActionChild,
-  type TracePlayerData
+import type {
+  CommandLog,
+  TraceActionChild,
+  TracePlayerData
 } from '@wdio/devtools-shared'
 import * as attr from './attributes.js'
-import type { Manifest, ManifestArtifact, ManifestTest } from './manifest.js'
+import {
+  artifactUrlFor,
+  describe,
+  traceArtifactsByUid,
+  zipReader
+} from './artifact-sources.js'
+import { emitPrepared, type TelemetrySink } from './emit-spans.js'
+import type { Manifest, ManifestTest } from './manifest.js'
+import {
+  actionStart,
+  normalizeSelector,
+  STATE_FAILED,
+  STATE_PASSED,
+  type ActionInfo,
+  type AttemptView,
+  type Bounds,
+  type PreparedRoot,
+  type PreparedTest,
+  type TraceEvidence
+} from './prepared.js'
+import type { PinnedSpanIds } from './span-ids.js'
 
-const MAX_EVENTS_PER_TEST = 100
-const REPORTED_CONSOLE_LEVELS: ReadonlySet<string> = new Set(['warn', 'error'])
-const STATE_PASSED = 'passed'
-const STATE_FAILED = 'failed'
-const LOKI_LATE_RECORD_WINDOW_MS = 60 * 60 * 1000
-const RETRY_DIR_SUFFIX = /-retry(\d+)$/
-const MAX_ERROR_MESSAGE_LENGTH = 4096
+type ManifestParent = NonNullable<Manifest['parent']>
 
 export interface ManifestInput {
   file: string
@@ -37,62 +44,43 @@ export interface ManifestInput {
 export interface PushInput {
   manifests: ManifestInput[]
   runId: string
-  nowMs: number
   artifactBaseUrl?: string
+  traceZips: boolean
   loadZip: (zipPath: string) => Uint8Array
   warn: (message: string) => void
 }
 
-export interface TelemetrySink {
-  tracer: Tracer
-  logger: Logger
-  flush: () => Promise<void>
-}
-
 export interface PushPlan {
-  problems: string[]
+  /** Zips requested under --trace-zips that could not be read or parsed; complete once `emit` has run. */
+  unreadable: () => string[]
   emit: (sink: TelemetrySink) => Promise<number>
 }
 
-interface ActionInfo {
-  command: CommandLog
-  key: string
-  ordinal: number
-  failure: { message: string } | undefined
+interface RunContext {
+  runId: string
+  mtimeMs: number
+  parent: ManifestParent | undefined
+  warn: (message: string) => void
 }
 
-interface Bounds {
-  startMs: number
-  endMs: number
+interface TestSource {
+  data: TracePlayerData | undefined
+  artifactUrl: string | undefined
 }
 
-interface TraceEvidence {
-  data: TracePlayerData
-  actions: ActionInfo[]
-  failure: ActionInfo | undefined
-  span: Bounds
-}
-
-interface PreparedTest {
+interface PreparedFacts {
   test: ManifestTest
-  timeMs: number
-  attributes: Record<string, string | number>
+  run: RunContext
+  span: Bounds | undefined
+  evidence: TraceEvidence | undefined
+  finalAttributes: Record<string, string | number>
   errorMessage: string | undefined
-  trace: TraceEvidence | undefined
-}
-
-function normalizeSelector(selector: string): string {
-  return selector.trim().replace(/\s+/g, ' ')
 }
 
 function actionKey(command: CommandLog): string {
   return command.selector
     ? `${command.command} ${normalizeSelector(command.selector)}`
     : command.command
-}
-
-function actionStart(command: CommandLog): number {
-  return command.startTime ?? command.timestamp
 }
 
 function actionInfos(commands: CommandLog[]): ActionInfo[] {
@@ -102,15 +90,9 @@ function actionInfos(commands: CommandLog[]): ActionInfo[] {
       (a, b) =>
         actionStart(a.command) - actionStart(b.command) || a.index - b.index
     )
-  const retried = retriedRows(commands)
   const infos = new Array<ActionInfo>(commands.length)
   chronological.forEach(({ command, index }, ordinal) => {
-    infos[index] = {
-      command,
-      key: actionKey(command),
-      ordinal,
-      failure: effectiveFailure(command, retried)
-    }
+    infos[index] = { command, key: actionKey(command), ordinal }
   })
   return infos
 }
@@ -125,139 +107,20 @@ function status(state: string): string {
   return state
 }
 
-function capLength(message: string | undefined): string | undefined {
-  return message && message.length > MAX_ERROR_MESSAGE_LENGTH
-    ? `${message.slice(0, MAX_ERROR_MESSAGE_LENGTH)}…`
-    : message
-}
-
-function stringifyArg(arg: unknown): string {
-  return typeof arg === 'string' ? arg : (JSON.stringify(arg) ?? String(arg))
-}
-
-function urlPath(url: string): string {
-  try {
-    return new URL(url).pathname
-  } catch {
-    return url.split(/[?#]/, 1)[0]
-  }
-}
-
-function isFailedRequest(request: NetworkRequest): boolean {
-  return (
-    request.status !== undefined &&
-    (request.status === 0 || request.status >= 400)
-  )
-}
-
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
-function startActionSpan(
-  tracer: Tracer,
-  info: ActionInfo,
-  parent: Context
-): Span {
-  const { command } = info
-  const span = tracer.startSpan(
-    command.title ?? command.command,
-    {
-      startTime: new Date(actionStart(command)),
-      attributes: {
-        [attr.ATTR_ACTION_KEY]: info.key,
-        [attr.ATTR_ACTION_INDEX]: info.ordinal,
-        [attr.ATTR_ACTION_METHOD]: command.command,
-        ...(command.selector
-          ? { [attr.ATTR_ACTION_SELECTOR]: normalizeSelector(command.selector) }
-          : {})
-      }
-    },
-    parent
-  )
-  if (info.failure) {
-    span.setStatus({
-      code: SpanStatusCode.ERROR,
-      message: info.failure.message
-    })
-    span.recordException({ message: info.failure.message })
-  }
-  span.end(new Date(Math.max(command.timestamp, actionStart(command))))
-  return span
-}
-
-function emitTree(
-  tracer: Tracer,
-  children: TraceActionChild[],
-  actions: ActionInfo[],
-  parent: Context
-): void {
-  for (const child of children) {
-    if ('group' in child) {
-      const span = tracer.startSpan(
-        child.group.title,
-        { startTime: new Date(child.group.startTime) },
-        parent
-      )
-      emitTree(
-        tracer,
-        child.group.children,
-        actions,
-        trace.setSpan(parent, span)
-      )
-      span.end(new Date(child.group.endTime))
-    } else {
-      const span = startActionSpan(tracer, actions[child.commandIndex], parent)
-      emitTree(
-        tracer,
-        child.children ?? [],
-        actions,
-        trace.setSpan(parent, span)
-      )
-    }
-  }
-}
-
-function addTestEvents(span: Span, data: TracePlayerData): void {
-  data.trace.consoleLogs
-    .filter((log) => REPORTED_CONSOLE_LEVELS.has(log.type))
-    .slice(0, MAX_EVENTS_PER_TEST)
-    .forEach((log) =>
-      span.addEvent(
-        attr.EVENT_CONSOLE,
-        {
-          [attr.ATTR_CONSOLE_TYPE]: log.type,
-          [attr.ATTR_CONSOLE_MESSAGE]: log.args.map(stringifyArg).join(' ')
-        },
-        new Date(log.timestamp)
-      )
-    )
-  data.trace.networkRequests
-    .filter(isFailedRequest)
-    .slice(0, MAX_EVENTS_PER_TEST)
-    .forEach((request) =>
-      span.addEvent(
-        attr.EVENT_REQUEST_FAILED,
-        {
-          [attr.ATTR_URL_PATH]: urlPath(request.url),
-          [attr.ATTR_HTTP_METHOD]: request.method,
-          [attr.ATTR_NETWORK_STATUS]: request.status ?? -1
-        },
-        new Date(request.startTime)
-      )
-    )
-}
-
 function testAttributes(
   test: ManifestTest,
   runId: string,
+  state: string | undefined,
+  attempt: number,
   extra: Record<string, string | number>
 ): Record<string, string | number> {
   return {
     [attr.ATTR_TEST_CASE_NAME]: test.title,
     [attr.ATTR_TEST_SUITE_NAME]: test.specFile,
-    [attr.ATTR_TEST_CASE_RESULT_STATUS]: status(test.state),
-    [attr.ATTR_TEST_ATTEMPT]: test.attempt,
+    ...(state !== undefined
+      ? { [attr.ATTR_TEST_CASE_RESULT_STATUS]: status(state) }
+      : {}),
+    [attr.ATTR_TEST_ATTEMPT]: attempt,
     [attr.ATTR_RUN_ID]: runId,
     ...extra
   }
@@ -296,256 +159,275 @@ function bounds(
   }
 }
 
-function timingOf(
-  test: ManifestTest,
-  span: Bounds | undefined,
-  mtimeMs: number
-): { timeMs: number; source: string } {
-  if (test.endTime !== undefined) {
-    return { timeMs: test.endTime, source: attr.TIME_SOURCE_MANIFEST }
+function union(a: Bounds, b: Bounds): Bounds {
+  return {
+    startMs: Math.min(a.startMs, b.startMs),
+    endMs: Math.max(a.endMs, b.endMs)
   }
-  if (span) {
-    return { timeMs: span.startMs, source: attr.TIME_SOURCE_TRACE }
-  }
-  return { timeMs: mtimeMs, source: attr.TIME_SOURCE_MANIFEST_FILE }
 }
 
-function prepareTest(
+/** The test's own timing, for a manifest that predates `attempts`. */
+function testBounds(test: ManifestTest): Bounds | undefined {
+  const endMs =
+    test.endTime ??
+    (test.startTime !== undefined && test.durationMs !== undefined
+      ? test.startTime + test.durationMs
+      : undefined)
+  if (endMs === undefined) {
+    return undefined
+  }
+  return {
+    startMs:
+      test.startTime ??
+      (test.durationMs !== undefined ? endMs - test.durationMs : endMs),
+    endMs
+  }
+}
+
+/** A root covers its own timing and every action under it, so children never fall outside. */
+function rootBounds(
+  timing: Bounds | undefined,
+  span: Bounds | undefined,
+  fallbackMs: number
+): Bounds {
+  const base = timing ?? span ?? { startMs: fallbackMs, endMs: fallbackMs }
+  return timing && span ? union(timing, span) : base
+}
+
+function timeSourceOf(test: ManifestTest, span: Bounds | undefined): string {
+  if (test.endTime !== undefined) {
+    return attr.TIME_SOURCE_MANIFEST
+  }
+  return span ? attr.TIME_SOURCE_TRACE : attr.TIME_SOURCE_MANIFEST_FILE
+}
+
+function durationOf(
   test: ManifestTest,
-  runId: string,
-  data: TracePlayerData | undefined,
-  artifactUrl: string | undefined,
-  mtimeMs: number
-): PreparedTest {
-  const actions = data ? actionInfos(data.trace.commands) : []
-  // A passing test's erroring command is one it caught or retried, not its failure.
-  const failure =
-    test.state === STATE_FAILED
-      ? actions
-          .filter((action) => action.failure)
-          .sort((a, b) => a.ordinal - b.ordinal)[0]
-      : undefined
-  const evidence: TraceEvidence | undefined = data
-    ? {
-        data,
-        actions,
-        failure,
-        span: bounds(actions, data.groups ?? [], data.startTime)
-      }
-    : undefined
-  const span = evidence?.span
-  const errorMessage = capLength(test.error ?? failure?.failure?.message)
+  span: Bounds | undefined
+): number | undefined {
   const manifestDurationMs =
     test.startTime !== undefined && test.endTime !== undefined
       ? test.endTime - test.startTime
       : undefined
-  const durationMs =
+  return (
     test.durationMs ??
     manifestDurationMs ??
     (span ? span.endMs - span.startMs : undefined)
-  const timing = timingOf(test, span, mtimeMs)
-  const attributes = testAttributes(test, runId, {
-    ...(durationMs !== undefined
-      ? { [attr.ATTR_DURATION_MS]: durationMs }
-      : {}),
-    [attr.ATTR_TIME_SOURCE]: timing.source,
-    ...(errorMessage !== undefined
-      ? { [attr.ATTR_ERROR_MESSAGE]: errorMessage }
-      : {}),
-    ...(failure ? { [attr.ATTR_FAILED_ACTION]: failure.key } : {}),
-    ...(artifactUrl ? { [attr.ATTR_ARTIFACT_URL]: artifactUrl } : {})
-  })
-  return {
-    test,
-    timeMs: timing.timeMs,
-    attributes,
-    errorMessage,
-    trace: evidence
-  }
+  )
 }
 
-function emitRoot(
-  tracer: Tracer,
-  item: PreparedTest,
-  evidence: TraceEvidence
-): Span {
-  const { test, attributes, errorMessage } = item
-  const root = tracer.startSpan(
-    test.title,
-    { startTime: new Date(evidence.span.startMs), attributes },
-    ROOT_CONTEXT
-  )
-  if (test.state === STATE_FAILED) {
-    root.setStatus({ code: SpanStatusCode.ERROR, message: errorMessage })
+function attemptViews(test: ManifestTest): AttemptView[] {
+  if (!test.attempts?.length) {
+    return [
+      {
+        attempt: test.attempt,
+        state: test.state,
+        ids: undefined,
+        timing: testBounds(test),
+        final: true
+      }
+    ]
   }
-  const children =
-    evidence.data.groups ??
-    evidence.actions.map((_, commandIndex) => ({ commandIndex }))
-  emitTree(
-    tracer,
-    children,
-    evidence.actions,
-    trace.setSpan(ROOT_CONTEXT, root)
-  )
-  addTestEvents(root, evidence.data)
-  root.end(new Date(evidence.span.endMs))
-  return root
-}
-
-function emitPrepared(sink: TelemetrySink, item: PreparedTest): void {
-  const { test, timeMs, attributes } = item
-  const root = item.trace ? emitRoot(sink.tracer, item, item.trace) : undefined
-  const failed = test.state === STATE_FAILED
-  sink.logger.emit({
-    body: test.title,
-    severityNumber: failed ? SeverityNumber.ERROR : SeverityNumber.INFO,
-    severityText: failed ? 'ERROR' : 'INFO',
-    attributes,
-    timestamp: new Date(timeMs),
-    ...(root ? { context: trace.setSpan(ROOT_CONTEXT, root) } : {})
+  const records = [...test.attempts].sort((a, b) => a.attempt - b.attempt)
+  const stamped = records.some((record) => record.final)
+  return records.map((record, index) => {
+    // Manifests from before `final` was stamped have no marked record; their last attempt is the final one.
+    const final = record.final ?? (!stamped && index === records.length - 1)
+    return {
+      attempt: record.attempt,
+      state: final ? test.state : record.state,
+      ids: { traceId: record.traceId, spanId: record.spanId },
+      timing: {
+        startMs: record.startTime,
+        endMs: record.endTime ?? record.startTime
+      },
+      final
+    }
   })
 }
 
-function warnIfOutsideLokiWindow(
-  ordered: PreparedTest[],
-  nowMs: number,
+/** The attempt's ids win over a parent that disagrees, since the children and the stamped ids were minted together. */
+function parentContextOf(
+  parent: ManifestParent | undefined,
+  ids: PinnedSpanIds | undefined,
+  label: string,
   warn: (message: string) => void
-): void {
-  if (ordered.length === 0) {
-    return
+): Context {
+  if (!parent) {
+    return ROOT_CONTEXT
   }
-  const oldest = ordered[0].timeMs
-  const newest = ordered[ordered.length - 1].timeMs
-  if (
-    newest - oldest <= LOKI_LATE_RECORD_WINDOW_MS &&
-    nowMs - oldest <= LOKI_LATE_RECORD_WINDOW_MS
-  ) {
-    return
-  }
-  warn(
-    `${ordered.length} record(s) span ${new Date(oldest).toISOString()} to ${new Date(newest).toISOString()}, and the oldest is ${Math.round((nowMs - oldest) / 60000)} min behind now. Loki silently drops entries about an hour behind the newest in a stream (HTTP 200, no error), so those records may be missing. Push promptly after the run. See packages/otel/README.md`
-  )
-}
-
-function attemptKeyOf(test: ManifestTest): string {
-  return test.attempt > 0 ? `${test.uid}-retry${test.attempt}` : test.uid
-}
-
-function retryOf(artifact: ManifestArtifact): number {
-  const dir = path.basename(path.dirname(artifact.path))
-  return Number(RETRY_DIR_SUFFIX.exec(dir)?.[1] ?? 0)
-}
-
-/** The zip of the test's final attempt; an earlier attempt's zip never stands in for it. */
-function traceArtifactFor(
-  manifest: Manifest,
-  test: ManifestTest
-): ManifestArtifact | undefined {
-  const candidates = manifest.artifacts.filter(
-    (artifact) =>
-      artifact.kind === 'trace' && artifact.testUids.includes(test.uid)
-  )
-  if (candidates.some((artifact) => artifact.key !== undefined)) {
-    return candidates.find((artifact) => artifact.key === attemptKeyOf(test))
-  }
-  return candidates.reduce<ManifestArtifact | undefined>(
-    (best, artifact) =>
-      best === undefined || retryOf(artifact) > retryOf(best) ? artifact : best,
-    undefined
-  )
-}
-
-function withTrailingSlash(url: string): string {
-  return url.endsWith('/') ? url : `${url}/`
-}
-
-function artifactUrlFor(
-  dir: string,
-  zipPath: string,
-  base: string,
-  warn: (message: string) => void
-): string | undefined {
-  const relative = path.relative(dir, zipPath)
-  const segments = relative.split(path.sep)
-  if (path.isAbsolute(relative) || segments.includes('..')) {
+  if (ids?.traceId !== undefined && ids.traceId !== parent.traceId) {
     warn(
-      `no artifact URL for ${zipPath}: the zip is outside the manifest directory ${dir}, so it cannot be addressed under --artifact-base-url`
+      `${label} is in trace ${ids.traceId}, not the manifest's parent trace ${parent.traceId}, so it keeps its own ids and is not linked to the parent`
     )
+    return ROOT_CONTEXT
+  }
+  return trace.setSpanContext(ROOT_CONTEXT, {
+    traceId: parent.traceId,
+    spanId: parent.spanId,
+    traceFlags: parent.traceFlags,
+    isRemote: true,
+    ...(parent.traceState !== undefined
+      ? { traceState: createTraceState(parent.traceState) }
+      : {})
+  })
+}
+
+function prepareRoot(view: AttemptView, facts: PreparedFacts): PreparedRoot {
+  const { test, run, span, evidence, finalAttributes, errorMessage } = facts
+  const label = `${test.uid} attempt ${view.attempt}`
+  const attributes = view.final
+    ? finalAttributes
+    : testAttributes(test, run.runId, view.state, view.attempt, {
+        ...(view.timing
+          ? {
+              [attr.ATTR_DURATION_MS]: view.timing.endMs - view.timing.startMs,
+              [attr.ATTR_TIME_SOURCE]: attr.TIME_SOURCE_MANIFEST
+            }
+          : { [attr.ATTR_TIME_SOURCE]: attr.TIME_SOURCE_MANIFEST_FILE })
+      })
+  return {
+    attributes: { ...attributes, [attr.ATTR_TEST_FINAL_ATTEMPT]: view.final },
+    bounds: rootBounds(view.timing, view.final ? span : undefined, run.mtimeMs),
+    state: view.state,
+    errorMessage: view.final ? errorMessage : undefined,
+    ids: view.ids,
+    context: parentContextOf(run.parent, view.ids, label, run.warn),
+    final: view.final,
+    trace: view.final ? evidence : undefined
+  }
+}
+
+/** A passing test's erroring command is one it caught or retried, not its failure. */
+function failedActionOf(
+  test: ManifestTest,
+  actions: ActionInfo[]
+): ActionInfo | undefined {
+  if (test.state !== STATE_FAILED) {
     return undefined
   }
-  return new URL(
-    segments.map(encodeURIComponent).join('/'),
-    withTrailingSlash(base)
-  ).href
+  return actions
+    .filter((action) => action.command.error)
+    .sort((a, b) => a.ordinal - b.ordinal)[0]
 }
 
-function zipReader(
-  loadZip: (zipPath: string) => Uint8Array,
-  problems: string[]
-): (zipPath: string) => TracePlayerData | undefined {
-  const zips = new Map<string, TracePlayerData | undefined>()
-  return (zipPath) => {
-    if (!zips.has(zipPath)) {
-      try {
-        zips.set(zipPath, parseTraceZip(loadZip(zipPath)))
-      } catch (error) {
-        problems.push(`${zipPath}: ${describe(error)}`)
-        zips.set(zipPath, undefined)
-      }
+function prepareTest(
+  test: ManifestTest,
+  source: TestSource,
+  run: RunContext
+): PreparedTest {
+  const { data, artifactUrl } = source
+  const actions = data ? actionInfos(data.trace.commands) : []
+  const failure = failedActionOf(test, actions)
+  const span = data
+    ? bounds(actions, data.groups ?? [], data.startTime)
+    : undefined
+  const evidence: TraceEvidence | undefined =
+    data && span ? { data, actions, failure, span } : undefined
+  const errorMessage = test.error ?? failure?.command.error?.message
+  const durationMs = durationOf(test, span)
+  const finalAttributes = testAttributes(
+    test,
+    run.runId,
+    test.state,
+    test.attempt,
+    {
+      ...(durationMs !== undefined
+        ? { [attr.ATTR_DURATION_MS]: durationMs }
+        : {}),
+      [attr.ATTR_TIME_SOURCE]: timeSourceOf(test, span),
+      ...(errorMessage !== undefined
+        ? { [attr.ATTR_ERROR_MESSAGE]: errorMessage }
+        : {}),
+      ...(failure ? { [attr.ATTR_FAILED_ACTION]: failure.key } : {}),
+      ...(artifactUrl ? { [attr.ATTR_ARTIFACT_URL]: artifactUrl } : {})
     }
-    return zips.get(zipPath)
-  }
-}
-
-/**
- * Reads every zip and builds every record before anything is exported, so a
- * missing or unparseable input is reported in full and nothing is pushed.
- */
-export function planPush(input: PushInput): PushPlan {
-  const problems: string[] = []
-  const loadTrace = zipReader(input.loadZip, problems)
-  const prepared: PreparedTest[] = []
-  for (const { file, manifest, mtimeMs } of input.manifests) {
-    const dir = path.dirname(file)
-    const testUids = new Set(manifest.tests.map((test) => test.uid))
-    let warnedSharedZip = false
-    for (const test of manifest.tests) {
-      const artifact = traceArtifactFor(manifest, test)
-      const sharedZip =
-        artifact !== undefined &&
-        artifact.testUids.filter((uid) => testUids.has(uid)).length > 1
-      if (sharedZip && !warnedSharedZip) {
-        input.warn(
-          `skipped traces in ${file}: traceGranularity:'test' is required for traces, so its zips cover several tests`
-        )
-        warnedSharedZip = true
-      }
-      const traced = sharedZip ? undefined : artifact
-      const zipPath = traced ? path.resolve(dir, traced.path) : undefined
-      const data = zipPath ? loadTrace(zipPath) : undefined
-      const artifactUrl =
-        zipPath && input.artifactBaseUrl
-          ? artifactUrlFor(dir, zipPath, input.artifactBaseUrl, input.warn)
-          : undefined
-      prepared.push(prepareTest(test, input.runId, data, artifactUrl, mtimeMs))
-    }
-  }
+  )
   return {
-    problems,
+    test,
+    roots: attemptViews(test).map((view) =>
+      prepareRoot(view, {
+        test,
+        run,
+        span,
+        evidence,
+        finalAttributes,
+        errorMessage
+      })
+    )
+  }
+}
+
+/** Each test's preparation is deferred so its zip is parsed only when its spans are emitted. */
+function planManifest(
+  input: PushInput,
+  { file, manifest, mtimeMs }: ManifestInput,
+  readTrace: (zipPath: string) => TracePlayerData | undefined
+): Array<() => PreparedTest> {
+  const dir = path.dirname(file)
+  const testUids = new Set(manifest.tests.map((test) => test.uid))
+  const artifactsByUid = traceArtifactsByUid(manifest)
+  const run: RunContext = {
+    runId: input.runId,
+    mtimeMs,
+    parent: manifest.parent,
+    warn: input.warn
+  }
+  const pending: Array<() => PreparedTest> = []
+  let warnedSharedZip = false
+  for (const test of manifest.tests) {
+    const artifact = artifactsByUid.get(test.uid)
+    const sharedZip =
+      artifact !== undefined &&
+      artifact.testUids.filter((uid) => testUids.has(uid)).length > 1
+    if (sharedZip && input.traceZips && !warnedSharedZip) {
+      input.warn(
+        `skipped traces in ${file}: traceGranularity:'test' is required for traces, so its zips cover several tests`
+      )
+      warnedSharedZip = true
+    }
+    // A dropped zip (retained:false) has no file to link to.
+    const linked = !sharedZip && artifact?.retained ? artifact : undefined
+    const zipPath = linked ? path.resolve(dir, linked.path) : undefined
+    const artifactUrl =
+      zipPath && input.artifactBaseUrl
+        ? artifactUrlFor(dir, zipPath, input.artifactBaseUrl, input.warn)
+        : undefined
+    pending.push(() =>
+      prepareTest(
+        test,
+        {
+          data: input.traceZips && zipPath ? readTrace(zipPath) : undefined,
+          artifactUrl
+        },
+        run
+      )
+    )
+  }
+  return pending
+}
+
+export function planPush(input: PushInput): PushPlan {
+  const reader = zipReader(input.loadZip, input.warn)
+  const pending = input.manifests.flatMap((manifest) =>
+    planManifest(input, manifest, reader.read)
+  )
+  return {
+    unreadable: () => reader.unreadable(),
     async emit(sink) {
-      const ordered = [...prepared].sort((a, b) => a.timeMs - b.timeMs)
-      warnIfOutsideLokiWindow(ordered, input.nowMs, input.warn)
-      for (const item of ordered) {
-        emitPrepared(sink, item)
+      let pushed = 0
+      for (const prepare of pending) {
+        emitPrepared(sink, prepare())
+        try {
+          await sink.flush()
+        } catch (error) {
+          throw new Error(
+            `${pushed} of ${pending.length} test(s) were pushed before the export failed: ${describe(error)}`
+          )
+        }
+        pushed++
       }
-      try {
-        await sink.flush()
-      } catch (error) {
-        throw new Error(
-          `the export of ${ordered.length} test(s) failed, so some may not have reached the collector: ${describe(error)}`
-        )
-      }
-      return ordered.length
+      return pushed
     }
   }
 }

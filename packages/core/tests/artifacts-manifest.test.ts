@@ -223,6 +223,79 @@ describe('artifacts manifest', () => {
     expect(m.tests.map((t) => t.uid)).toEqual(['orphan:step:1'])
   })
 
+  it('carries the run id, parent context and per-attempt records when given', () => {
+    const attempts = [
+      {
+        attempt: 0,
+        state: 'failed' as const,
+        startTime: 1,
+        endTime: 2,
+        traceId: '0af7651916cd43dd8448eb211c80319c',
+        spanId: 'b7ad6b7169203331'
+      }
+    ]
+    const m = buildArtifactsManifest({
+      sessionId: 'sess-r',
+      format: 'zip',
+      artifacts: [],
+      testMetadata: metadata(),
+      runId: 'run-1',
+      parent: {
+        traceId: '0af7651916cd43dd8448eb211c80319c',
+        spanId: 'b7ad6b7169203331',
+        traceFlags: 1,
+        traceState: 'vendor=1'
+      },
+      attemptsFor: (uid) => (uid === 'u2' ? attempts : [])
+    })
+    expect(m.runId).toBe('run-1')
+    expect(m.parent?.traceState).toBe('vendor=1')
+    expect(m.tests[0]).not.toHaveProperty('attempts')
+    expect(m.tests[1]!.attempts).toEqual([{ ...attempts[0], final: true }])
+  })
+
+  it('leaves run id, parent and attempts out when not given', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'manifest-'))
+    dirs.push(dir)
+    const m = buildArtifactsManifest({
+      sessionId: 'sess-n',
+      format: 'zip',
+      artifacts: [],
+      testMetadata: metadata()
+    })
+    const parsed = JSON.parse(
+      await readFile(await writeArtifactsManifest(dir, m), 'utf8')
+    ) as Record<string, unknown>
+    expect(parsed).not.toHaveProperty('runId')
+    expect(parsed).not.toHaveProperty('parent')
+    expect(m.tests.every((t) => !('attempts' in t))).toBe(true)
+  })
+
+  it('stamps final on the attempt a test ended on, else on the last one recorded', () => {
+    const record = (attempt: number) => ({
+      attempt,
+      startTime: attempt,
+      traceId: '0af7651916cd43dd8448eb211c80319c',
+      spanId: 'b7ad6b7169203331'
+    })
+    const testMetadata: TestMetadataMap = new Map([
+      ['u1', { title: 'a', specFile: '/a.js', state: 'passed', attempt: 1 }],
+      ['u2', { title: 'b', specFile: '/a.js', state: 'passed', attempt: 5 }]
+    ])
+    const m = buildArtifactsManifest({
+      sessionId: 'sess-f',
+      format: 'zip',
+      artifacts: [],
+      testMetadata,
+      attemptsFor: () => [record(0), record(1)]
+    })
+    expect(m.tests[0]!.attempts).toEqual([
+      record(0),
+      { ...record(1), final: true }
+    ])
+    expect(m.tests[1]!.attempts!.map((a) => a.final)).toEqual([undefined, true])
+  })
+
   it('filename is deterministic per session', () => {
     expect(artifactsManifestFilename('abc')).toBe('devtools-artifacts-abc.json')
   })

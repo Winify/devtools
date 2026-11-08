@@ -184,7 +184,46 @@ function describeCall(
   }
 }
 
-function makeWrappedMethod(
+/** Telemetry reports the command without reading it: no stack walk, no serialization, no value registry. */
+function settleCall(
+  hooks: DriverPatcherHooks,
+  methodName: string,
+  args: unknown[],
+  fromElement: boolean,
+  target: unknown
+): (result: unknown, error: Error | undefined) => void {
+  // Before the instrumentation below: serializing args and walking the stack
+  // both cost time that would otherwise land inside the row's own duration.
+  const startTime = Date.now()
+  // Suppresses the screencast recorder's screenshot polling until this command
+  // settles: a poll landing inside chromedriver's click, between computing the
+  // element's coordinates and dispatching at them, makes the click report
+  // success while activating nothing. Only the non-Chrome polling path is
+  // affected — Chrome uses push-based CDP screencast and never polls.
+  const closeInputWindow = beginInputDispatch(methodName)
+  if (hooks.observesPage?.() === false) {
+    return (_result, error) => {
+      closeInputWindow()
+      emitCommand(hooks, {
+        command: methodName,
+        args: [],
+        callSource: undefined,
+        fromElement,
+        startTime,
+        result: undefined,
+        error,
+        timestamp: Date.now()
+      })
+    }
+  }
+  return makeSettle(
+    hooks,
+    describeCall(methodName, args, fromElement, target, startTime),
+    closeInputWindow
+  )
+}
+
+export function makeWrappedMethod(
   original: (...args: unknown[]) => unknown,
   methodName: string,
   fromElement: boolean,
@@ -194,20 +233,7 @@ function makeWrappedMethod(
     !fromElement &&
     (ELEMENT_LOCATOR_METHODS as readonly string[]).includes(methodName)
   return function (this: unknown, ...args: unknown[]): unknown {
-    // Before the instrumentation below: serializing args and walking the stack
-    // both cost time that would otherwise land inside the row's own duration.
-    const startTime = Date.now()
-    // Suppresses the screencast recorder's screenshot polling until this command
-    // settles: a poll landing inside chromedriver's click, between computing the
-    // element's coordinates and dispatching at them, makes the click report
-    // success while activating nothing. Only the non-Chrome polling path is
-    // affected — Chrome uses push-based CDP screencast and never polls.
-    const closeInputWindow = beginInputDispatch(methodName)
-    const settle = makeSettle(
-      hooks,
-      describeCall(methodName, args, fromElement, this, startTime),
-      closeInputWindow
-    )
+    const settle = settleCall(hooks, methodName, args, fromElement, this)
 
     let result: unknown
     try {

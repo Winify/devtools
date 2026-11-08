@@ -57,7 +57,9 @@ module.exports = {
         // Cucumber exposes per-scenario hooks, so each scenario is captured as
         // its own test unit. Trace when the harness sets DEVTOOLS_MODE=trace,
         // otherwise stream live to the backend/UI.
-        mode: process.env.DEVTOOLS_MODE === 'trace' ? 'trace' : 'live',
+        mode: ['trace', 'telemetry'].includes(process.env.DEVTOOLS_MODE)
+          ? process.env.DEVTOOLS_MODE
+          : 'live',
         // 'test' (not 'session'): Nightwatch quits the browser per scenario, so a
         // single run-end session write has no live session. Per-scenario 'test'
         // slices flush a zip at each scenario's pre-quit hook, while the session

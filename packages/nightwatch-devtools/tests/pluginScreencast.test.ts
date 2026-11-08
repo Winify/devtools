@@ -60,6 +60,17 @@ describe('resolveScreencastOptions', () => {
     expect(resolved.warning).toContain('live-mode feature')
   })
 
+  it('records nothing in telemetry mode, whatever the options say', () => {
+    expect(
+      resolveScreencastOptions({
+        mode: 'telemetry',
+        filmstrip: true,
+        video: 'retain-on-failure',
+        screencast: { enabled: true }
+      })
+    ).toEqual({ options: {} })
+  })
+
   it('leaves live mode to the user options', () => {
     expect(
       resolveScreencastOptions({

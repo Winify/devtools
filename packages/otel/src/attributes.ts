@@ -10,6 +10,7 @@ export const TEST_CASE_RESULT_STATUS_FAIL = 'fail'
 
 export const ATTR_ERROR_MESSAGE = 'error.message'
 export const ATTR_TEST_ATTEMPT = 'devtools.test.attempt'
+export const ATTR_TEST_FINAL_ATTEMPT = 'devtools.test.final_attempt'
 export const ATTR_DURATION_MS = 'devtools.duration_ms'
 export const ATTR_FAILED_ACTION = 'devtools.failed_action'
 export const ATTR_RUN_ID = 'devtools.run.id'

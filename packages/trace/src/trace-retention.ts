@@ -134,5 +134,5 @@ export function tracePolicyModeWarning(
   if (policy === undefined || mode === 'trace') {
     return undefined
   }
-  return 'tracePolicy only applies in trace mode; ignoring it because mode is not "trace".'
+  return `tracePolicy only applies in trace mode; it has no effect in ${mode ?? 'live'} mode.`
 }

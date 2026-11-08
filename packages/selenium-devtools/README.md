@@ -316,6 +316,8 @@ DevTools.configure({ rerunCommand: 'npm test -- --grep "{{testName}}"' })
 #### `mode` — live UI vs. headless trace.zip
 **Default:** `'live'` (launches the dashboard window). Set to `'trace'` to skip the dashboard entirely and write a `trace-<sessionId>.zip` under a `test-results/` directory at session end (the base dir resolves from the test file's directory → the config directory → cwd) — meant for CI / offline replay / agentic diffing. For `traceGranularity: 'test'` the per-test artifact lands at `test-results/<spec>-<title>-<browser>[-retryN]/trace.zip`. `screencast` is ignored in trace mode (live-mode-only feature).
 
+Set to `'telemetry'` for a run that only reports its results: no backend, no dashboard window, no trace zip, and no per-action DOM, screenshot or screencast capture. The test lifecycle still runs, and the artifacts manifest (`devtools-artifacts-<sessionId>.json`, carrying the run id and each attempt's trace id) is written at session end. Use it when the results go to an OpenTelemetry or other external sink and nothing needs a replayable trace.
+
 ```javascript
 DevTools.configure({ mode: 'trace' })
 ```
@@ -401,7 +403,7 @@ The trace uses a portable NDJSON schema, so the same `.zip` (or `ndjson-director
 | `headless` | `boolean` | `false` | Run the **test** browser headless (injects `--headless=old`). The DevTools UI window is unaffected. |
 | `screencast` | `ScreencastOptions` | `{ enabled: false }` | Per-session `.webm` video recording. See sub-options below. |
 | `rerunCommand` | `string` | auto | Command template for per-test rerun. `{{testName}}` is substituted. Auto-derived from runner argv if omitted. |
-| `mode` | `'live' \| 'trace'` | `'live'` | `live` opens the DevTools UI; `trace` skips it and writes a portable trace artifact instead. Overrides `openUi`. |
+| `mode` | `'live' \| 'trace' \| 'telemetry'` | `'live'` | `live` opens the DevTools UI; `trace` skips it and writes a portable trace artifact instead; `telemetry` skips the UI and writes no trace, only the artifacts manifest (see above). Overrides `openUi`. |
 | `traceFormat` | `'zip' \| 'ndjson-directory'` | `'zip'` | Trace artifact layout — a single `.zip` or an unpacked directory. Trace mode only. |
 | `traceGranularity` | `'session' \| 'spec' \| 'test'` | `'session'` | One trace per session / spec file / test. `'test'` writes each to `test-results/<spec>-<title>-<browser>[-retryN]/trace.zip`. Trace mode only. |
 | `tracePolicy` | `'on' \| 'retain-on-failure' \| 'retain-on-first-failure' \| 'on-first-retry' \| 'on-all-retries' \| 'retain-on-failure-and-retries'` | `'on'` | Which traces to keep. Pairs with `traceGranularity: 'test'`. Trace mode only. |

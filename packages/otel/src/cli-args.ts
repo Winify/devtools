@@ -8,20 +8,23 @@ export const CLI_USAGE = `
 
   Pushes the tests in devtools-artifacts-<sessionId>.json manifests to the
   OpenTelemetry collector named by the standard OTEL_EXPORTER_OTLP_* env.
+  Each attempt becomes a root span with the ids the manifest records.
 
   Options:
-    --artifact-base-url <url>  Base URL the retained trace zips are served from
-    --run-id <id>              Run identity (default: sorted sessionIds joined by "+")
-    --dry-run                  Print spans and log records to stdout instead of exporting
+    --artifact-base-url <url>  Base URL the trace zips are served from
+    --run-id <id>              Run identity (default: the manifests' runId when they agree, else sorted sessionIds joined by "+")
+    --trace-zips               Read each test's trace zip and push its actions as child spans (a missing zip warns and skips them)
+    --dry-run                  Print spans to stdout instead of exporting
     -h, --help                 Show this message
 `
 
-export interface PushArgs {
+interface PushArgs {
   help: boolean
   manifests: string[]
   artifactBaseUrl?: string
   runId?: string
   dryRun: boolean
+  traceZips: boolean
 }
 
 const BROWSER_FETCHABLE_PROTOCOLS = ['http:', 'https:']
@@ -37,19 +40,35 @@ export function isBrowserFetchable(url: string): boolean {
 const VALUE_FLAGS = ['--artifact-base-url', '--run-id'] as const
 type ValueFlag = (typeof VALUE_FLAGS)[number]
 
+const SWITCH_FIELDS = new Map<string, 'dryRun' | 'traceZips'>([
+  ['--dry-run', 'dryRun'],
+  ['--trace-zips', 'traceZips']
+])
+
 export function parseCliArgs(argv: readonly string[]): PushArgs {
   const [command, ...rest] = argv
   if (argv.length === 0 || argv.includes('-h') || argv.includes('--help')) {
-    return { help: true, manifests: [], dryRun: false }
+    return {
+      help: true,
+      manifests: [],
+      dryRun: false,
+      traceZips: false
+    }
   }
   if (command !== 'push') {
     throw new Error(`unknown command "${command}"; expected "push"`)
   }
-  const args: PushArgs = { help: false, manifests: [], dryRun: false }
+  const args: PushArgs = {
+    help: false,
+    manifests: [],
+    dryRun: false,
+    traceZips: false
+  }
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i]
-    if (arg === '--dry-run') {
-      args.dryRun = true
+    const switchField = SWITCH_FIELDS.get(arg)
+    if (switchField) {
+      args[switchField] = true
       continue
     }
     const flag = VALUE_FLAGS.find(

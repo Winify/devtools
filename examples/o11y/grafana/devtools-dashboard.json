@@ -10,7 +10,7 @@
   "panels": [
     {
       "type": "stat",
-      "title": "Pass rate",
+      "title": "Results by status",
       "gridPos": {
         "x": 0,
         "y": 0,
@@ -18,31 +18,45 @@
         "h": 5
       },
       "datasource": {
-        "type": "loki",
-        "uid": "loki"
+        "type": "tempo",
+        "uid": "tempo"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit",
-          "decimals": 1,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
+          "noValue": "0"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "pass"
+            },
+            "properties": [
               {
-                "color": "red",
-                "value": null
-              },
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "fail"
+            },
+            "properties": [
               {
-                "color": "orange",
-                "value": 0.8
-              },
-              {
-                "color": "green",
-                "value": 0.95
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
               }
             ]
           }
-        }
+        ]
       },
       "options": {
         "reduceOptions": {
@@ -55,11 +69,18 @@
       "targets": [
         {
           "refId": "A",
-          "queryType": "instant",
-          "expr": "sum(count_over_time({service_name=\"devtools-tests\"} | test_case_result_status=\"pass\" [$__range])) / sum(count_over_time({service_name=\"devtools-tests\"} | test_case_result_status=~\"pass|fail\" [$__range]))"
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "queryType": "traceql",
+          "metricsQueryType": "instant",
+          "query": "{ resource.service.name=\"devtools-tests\" && span.test.case.result.status != nil && span.devtools.test.final_attempt = true } | count_over_time() by (span.test.case.result.status)",
+          "legendFormat": "{{span.test.case.result.status}}"
         }
       ],
-      "id": 1
+      "id": 1,
+      "description": "Pass and fail counts of final attempts, one per test. TraceQL metrics cannot divide two results in Grafana, so this shows counts rather than a percentage."
     },
     {
       "type": "stat",
@@ -71,8 +92,8 @@
         "h": 5
       },
       "datasource": {
-        "type": "loki",
-        "uid": "loki"
+        "type": "tempo",
+        "uid": "tempo"
       },
       "options": {
         "reduceOptions": {
@@ -84,11 +105,22 @@
       "targets": [
         {
           "refId": "A",
-          "queryType": "instant",
-          "expr": "sum(count_over_time({service_name=\"devtools-tests\"} [$__range]))"
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "queryType": "traceql",
+          "metricsQueryType": "instant",
+          "query": "{ resource.service.name=\"devtools-tests\" && span.test.case.result.status != nil && span.devtools.test.final_attempt = true } | count_over_time()"
         }
       ],
-      "id": 2
+      "id": 2,
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0"
+        }
+      },
+      "description": "Counts each test once, by its final attempt (span devtools.test.final_attempt)."
     },
     {
       "type": "stat",
@@ -100,8 +132,8 @@
         "h": 5
       },
       "datasource": {
-        "type": "loki",
-        "uid": "loki"
+        "type": "tempo",
+        "uid": "tempo"
       },
       "fieldConfig": {
         "defaults": {
@@ -117,7 +149,8 @@
                 "value": 1
               }
             ]
-          }
+          },
+          "noValue": "0"
         }
       },
       "options": {
@@ -131,11 +164,17 @@
       "targets": [
         {
           "refId": "A",
-          "queryType": "instant",
-          "expr": "sum(count_over_time({service_name=\"devtools-tests\"} | test_case_result_status=\"fail\" [$__range])) or vector(0)"
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "queryType": "traceql",
+          "metricsQueryType": "instant",
+          "query": "{ resource.service.name=\"devtools-tests\" && span.test.case.result.status != nil && span.devtools.test.final_attempt = true && span.test.case.result.status = \"fail\" } | count_over_time()"
         }
       ],
-      "id": 3
+      "id": 3,
+      "description": "Counts each test once, by its final attempt (span devtools.test.final_attempt)."
     },
     {
       "type": "stat",
@@ -147,8 +186,8 @@
         "h": 5
       },
       "datasource": {
-        "type": "loki",
-        "uid": "loki"
+        "type": "tempo",
+        "uid": "tempo"
       },
       "options": {
         "reduceOptions": {
@@ -160,12 +199,22 @@
       "targets": [
         {
           "refId": "A",
-          "queryType": "instant",
-          "expr": "sum(count_over_time({service_name=\"devtools-tests\"} | test_case_result_status=\"pass\" | devtools_test_attempt > 0 [$__range])) or vector(0)"
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "queryType": "traceql",
+          "metricsQueryType": "instant",
+          "query": "{ resource.service.name=\"devtools-tests\" && span.test.case.result.status != nil && span.test.case.result.status = \"pass\" && span.devtools.test.attempt > 0 } | count_over_time()"
         }
       ],
       "id": 4,
-      "description": "Counts tests that passed after a retry inside one worker process. specFileRetries retries in a fresh worker and are not counted."
+      "description": "Counts tests that passed after a retry inside one worker process. specFileRetries retries in a fresh worker and are not counted.",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0"
+        }
+      }
     },
     {
       "type": "timeseries",
@@ -177,8 +226,8 @@
         "h": 8
       },
       "datasource": {
-        "type": "loki",
-        "uid": "loki"
+        "type": "tempo",
+        "uid": "tempo"
       },
       "fieldConfig": {
         "defaults": {
@@ -226,11 +275,18 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (test_case_result_status) (count_over_time({service_name=\"devtools-tests\"} [$__interval]))",
-          "legendFormat": "{{test_case_result_status}}"
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "queryType": "traceql",
+          "metricsQueryType": "range",
+          "query": "{ resource.service.name=\"devtools-tests\" && span.test.case.result.status != nil && span.devtools.test.final_attempt = true } | count_over_time() by (span.test.case.result.status)",
+          "legendFormat": "{{span.test.case.result.status}}"
         }
       ],
-      "id": 5
+      "id": 5,
+      "description": "Counts each test once, by its final attempt (span devtools.test.final_attempt)."
     },
     {
       "type": "table",
@@ -242,8 +298,8 @@
         "h": 8
       },
       "datasource": {
-        "type": "loki",
-        "uid": "loki"
+        "type": "tempo",
+        "uid": "tempo"
       },
       "fieldConfig": {
         "defaults": {
@@ -253,10 +309,14 @@
       "targets": [
         {
           "refId": "A",
-          "queryType": "instant",
-          "expr": "quantile_over_time(0.95, {service_name=\"devtools-tests\"} | unwrap devtools_duration_ms [$__range]) by (test_case_name)",
-          "legendFormat": "{{test_case_name}}",
-          "format": "table"
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "queryType": "traceql",
+          "metricsQueryType": "instant",
+          "query": "{ resource.service.name=\"devtools-tests\" && span.test.case.result.status != nil && span.devtools.test.final_attempt = true } | quantile_over_time(span.devtools.duration_ms, .95) by (span.test.case.name)",
+          "legendFormat": "{{span.test.case.name}}"
         }
       ],
       "transformations": [
@@ -273,11 +333,12 @@
           "id": "organize",
           "options": {
             "excludeByName": {
-              "Time": true
+              "time": true,
+              "p": true
             },
             "renameByName": {
-              "Value #A": "p95 ms",
-              "test_case_name": "Test"
+              "value": "p95 ms",
+              "span.test.case.name": "Test"
             }
           }
         },
@@ -294,7 +355,7 @@
         }
       ],
       "id": 6,
-      "description": "Framework-reported duration when the manifest has it, else first-to-last action."
+      "description": "Framework-reported duration (span attribute devtools.duration_ms). Tempo estimates quantiles from power-of-two histogram buckets, so values are bucketed. Final attempts only."
     },
     {
       "type": "table",
@@ -306,8 +367,8 @@
         "h": 7
       },
       "datasource": {
-        "type": "loki",
-        "uid": "loki"
+        "type": "tempo",
+        "uid": "tempo"
       },
       "options": {
         "showHeader": true
@@ -326,11 +387,11 @@
           "id": "organize",
           "options": {
             "excludeByName": {
-              "Time": true
+              "time": true
             },
             "renameByName": {
-              "Value #A": "Failures",
-              "devtools_failed_action": "Action"
+              "value": "Failures",
+              "span.devtools.failed_action": "Action"
             }
           }
         }
@@ -338,13 +399,17 @@
       "targets": [
         {
           "refId": "A",
-          "queryType": "instant",
-          "expr": "topk(10, sum by (devtools_failed_action) (count_over_time({service_name=\"devtools-tests\"} | test_case_result_status=\"fail\" [$__range])))",
-          "legendFormat": "{{devtools_failed_action}}",
-          "format": "table"
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "queryType": "traceql",
+          "metricsQueryType": "instant",
+          "query": "{ resource.service.name=\"devtools-tests\" && span.test.case.result.status != nil && span.devtools.test.final_attempt = true && span.test.case.result.status = \"fail\" && span.devtools.failed_action != nil } | count_over_time() by (span.devtools.failed_action) | topk(10)"
         }
       ],
-      "id": 7
+      "id": 7,
+      "description": "Counts each test once, by its final attempt (span devtools.test.final_attempt)."
     },
     {
       "type": "table",
@@ -372,7 +437,7 @@
     {
       "type": "table",
       "title": "Test results",
-      "description": "One row per test from the Loki records. Replay opens the trace zip in the replay host set by the player_base variable (default player.vibium.dev); the zip is fetched by your browser from the artifact URL.",
+      "description": "One row per test, from its final attempt (span devtools.* attributes on the test root span). Replay opens the trace zip in the replay host set by the player_base variable (default player.vibium.dev); the zip is fetched by your browser from the artifact URL.",
       "gridPos": {
         "x": 0,
         "y": 20,
@@ -380,8 +445,8 @@
         "h": 11
       },
       "datasource": {
-        "type": "loki",
-        "uid": "loki"
+        "type": "tempo",
+        "uid": "tempo"
       },
       "fieldConfig": {
         "defaults": {
@@ -395,13 +460,9 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "devtools_replay_url"
+              "options": "Artifact"
             },
             "properties": [
-              {
-                "id": "displayName",
-                "value": "Replay"
-              },
               {
                 "id": "links",
                 "value": [
@@ -428,54 +489,46 @@
       "targets": [
         {
           "refId": "A",
-          "queryType": "range",
-          "expr": "{service_name=\"devtools-tests\"} | label_format devtools_replay_url=`{{ if or (hasPrefix \"http://\" .devtools_artifact_url) (hasPrefix \"https://\" .devtools_artifact_url) }}{{ .devtools_artifact_url }}{{ end }}`"
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "queryType": "traceql",
+          "metricsQueryType": "instant",
+          "query": "{ resource.service.name=\"devtools-tests\" && span.test.case.result.status != nil && span.devtools.test.final_attempt = true } | max_over_time(span.devtools.duration_ms) by (trace:id, span.test.case.name, span.test.case.result.status, span.devtools.failed_action, span.devtools.artifact.url)"
         }
       ],
       "transformations": [
         {
-          "id": "extractFields",
+          "id": "labelsToFields",
           "options": {
-            "source": "labels",
-            "format": "auto",
-            "replace": false
+            "mode": "columns"
           }
         },
         {
-          "id": "filterFieldsByName",
-          "options": {
-            "include": {
-              "names": [
-                "Time",
-                "test_case_name",
-                "test_case_result_status",
-                "devtools_duration_ms",
-                "devtools_failed_action",
-                "devtools_artifact_url",
-                "devtools_replay_url"
-              ]
-            }
-          }
+          "id": "merge"
         },
         {
           "id": "organize",
           "options": {
+            "excludeByName": {
+              "time": true
+            },
             "indexByName": {
-              "Time": 0,
-              "test_case_name": 1,
-              "test_case_result_status": 2,
-              "devtools_duration_ms": 3,
-              "devtools_failed_action": 4,
-              "devtools_artifact_url": 5,
-              "devtools_replay_url": 6
+              "trace:id": 0,
+              "span.test.case.name": 1,
+              "span.test.case.result.status": 2,
+              "value": 3,
+              "span.devtools.failed_action": 4,
+              "span.devtools.artifact.url": 5
             },
             "renameByName": {
-              "test_case_name": "Test",
-              "test_case_result_status": "Status",
-              "devtools_duration_ms": "Duration (ms)",
-              "devtools_failed_action": "Failed action",
-              "devtools_artifact_url": "Artifact",
-              "devtools_replay_url": "Replay"
+              "trace:id": "Trace ID",
+              "span.test.case.name": "Test",
+              "span.test.case.result.status": "Status",
+              "value": "Duration (ms)",
+              "span.devtools.failed_action": "Failed action",
+              "span.devtools.artifact.url": "Artifact"
             }
           }
         }
@@ -483,8 +536,8 @@
       "id": 9
     },
     {
-      "type": "logs",
-      "title": "Test results (latest)",
+      "type": "table",
+      "title": "Test results (latest traces)",
       "gridPos": {
         "x": 0,
         "y": 31,
@@ -492,21 +545,39 @@
         "h": 9
       },
       "datasource": {
-        "type": "loki",
-        "uid": "loki"
-      },
-      "options": {
-        "showTime": true,
-        "enableLogDetails": true,
-        "sortOrder": "Descending"
+        "type": "tempo",
+        "uid": "tempo"
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "{service_name=\"devtools-tests\"}"
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "queryType": "traceql",
+          "query": "{ resource.service.name=\"devtools-tests\" && span.test.case.result.status != nil && span.devtools.test.final_attempt = true }",
+          "limit": 50
         }
       ],
-      "id": 10
+      "id": 10,
+      "description": "Tempo search of final-attempt test root spans, newest first. A test whose root span has a parent missing from the trace shows no name here; panel 9 reads the span attributes and is unaffected.",
+      "transformations": [
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": [
+                "traceID",
+                "startTime",
+                "traceService",
+                "traceName",
+                "traceDuration"
+              ]
+            }
+          }
+        }
+      ]
     }
   ],
   "editable": false,

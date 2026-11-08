@@ -31,7 +31,9 @@ const { requireMobileToolchain } = createRequire(import.meta.url)(
 
 DevTools.configure({
   // Trace by default, matching the desktop demos.
-  mode: process.env.DEVTOOLS_MODE === 'live' ? 'live' : 'trace',
+  mode: ['live', 'telemetry'].includes(process.env.DEVTOOLS_MODE)
+    ? process.env.DEVTOOLS_MODE
+    : 'trace',
   traceGranularity: 'test'
 })
 

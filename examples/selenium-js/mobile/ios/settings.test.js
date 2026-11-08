@@ -24,7 +24,9 @@ const { requireMobileToolchain, resolveIosDevice } = createRequire(
 )('../../../mobile-preflight.cjs')
 
 DevTools.configure({
-  mode: process.env.DEVTOOLS_MODE === 'live' ? 'live' : 'trace',
+  mode: ['live', 'telemetry'].includes(process.env.DEVTOOLS_MODE)
+    ? process.env.DEVTOOLS_MODE
+    : 'trace',
   traceGranularity: 'test'
 })
 

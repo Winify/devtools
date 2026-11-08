@@ -58,7 +58,9 @@ module.exports = {
         // per module (no per-`it` hook), so traceGranularity:'test' collapses to
         // a single session-scoped slice here. See CLAUDE.md § Known debt.
         // Trace by default (regen/demo); DEVTOOLS_MODE=live flips to live for live-parity recording.
-        mode: process.env.DEVTOOLS_MODE === 'live' ? 'live' : 'trace',
+        mode: ['live', 'telemetry'].includes(process.env.DEVTOOLS_MODE)
+          ? process.env.DEVTOOLS_MODE
+          : 'trace',
         traceGranularity: 'session',
         // tracePolicy: 'retain-on-first-failure',
         bidi: true

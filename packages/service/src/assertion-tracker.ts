@@ -4,7 +4,7 @@
 
 import logger from '@wdio/logger'
 import { errorMessage } from '@wdio/devtools-core'
-import type { ActionSnapshot } from '@wdio/devtools-shared'
+import { capturesTrace, type ActionSnapshot } from '@wdio/devtools-shared'
 import {
   captureExpectFailure,
   expectAssertionToCommandLog,
@@ -132,7 +132,7 @@ export class AssertionTracker {
         log.debug(`assertion screenshot skipped: ${errorMessage(err)}`)
       }
     }
-    if (this.#ctx.options.mode === 'trace' && browser) {
+    if (capturesTrace(this.#ctx.options.mode) && browser) {
       await pushActionSnapshotAt(
         browser,
         entry.command,

@@ -64,6 +64,11 @@ describe('ScreencastLifecycle.start', () => {
   it.each([
     ['live, no options', {}, false],
     ['live, screencast enabled', { screencast: { enabled: true } }, true],
+    [
+      'telemetry, screencast enabled',
+      { mode: 'telemetry', screencast: { enabled: true } },
+      false
+    ],
     ['trace, filmstrip default-on', { mode: 'trace' }, true],
     [
       'trace, filmstrip off + no video',

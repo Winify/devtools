@@ -172,6 +172,14 @@ The per-test options — `traceGranularity: 'test'`, and the `tracePolicy`, `scr
 
 ---
 
+## Telemetry Mode
+
+Set `mode: 'telemetry'` when you want the run's test results without any DevTools output. No backend starts, no UI window opens, and nothing is captured per action: no screenshots, DOM, screencast, console or network capture, and no trace zips. The test lifecycle and retry tracking still run, and at run end the plugin writes only the artifacts manifest (`devtools-artifacts-<sessionId>.json`), which records the run id and each attempt's trace id. The manifest is written whether or not `emitArtifactsManifest` is set.
+
+```javascript
+globals: nightwatchDevtools({ mode: 'telemetry' })
+```
+
 ## BiDi capture
 
 Enable WebDriver BiDi capture for browser console messages, JS exceptions, and network requests. Equivalent to the path selenium-devtools uses — both adapters call the same `attachBidiHandlers` in `@wdio/devtools-core`.
@@ -248,7 +256,7 @@ The encoded video is sent to the DevTools dashboard via the `screencast` WS scop
 | `hostname` | `string` | `'localhost'` | Hostname the backend server binds to. |
 | `screencast` | `ScreencastOptions` | `{ enabled: false }` | Session video recording — live mode only (see [Screencast](#screencast)). |
 | `bidi` | `boolean` | `false` | Opt into WebDriver BiDi capture for browser console + JS exceptions + network. Requires `webSocketUrl: true` in your capabilities and a BiDi-capable chromedriver. When attached, the per-command Chrome perf-log network path is gated off so requests don't duplicate. |
-| `mode` | `'live' \| 'trace'` | `'live'` | `'live'` opens the DevTools UI window; `'trace'` skips the UI and writes a `trace-<sessionId>.zip` (or directory) under a `test-results/` directory at run end (base dir resolved from the test file dir → config dir → cwd). See [Trace mode](#trace-mode). |
+| `mode` | `'live' \| 'trace' \| 'telemetry'` | `'live'` | `'live'` opens the DevTools UI window; `'telemetry'` writes only the artifacts manifest (see [Telemetry Mode](#telemetry-mode)); `'trace'` skips the UI and writes a `trace-<sessionId>.zip` (or directory) under a `test-results/` directory at run end (base dir resolved from the test file dir → config dir → cwd). See [Trace mode](#trace-mode). |
 | `traceFormat` | `'zip' \| 'ndjson-directory'` | `'zip'` | Trace artifact layout — `zip` writes a single archive, `ndjson-directory` unpacks the same files into `trace-<sessionId>/`. Only applies when `mode: 'trace'`. |
 | `traceGranularity` | `'session' \| 'spec' \| 'test'` | `'session'` | One trace per session / spec file / test. `'test'` is what the per-test `screenshot` / `video` artifacts attach to. Only applies when `mode: 'trace'`. **Caveat:** the BDD `describe/it` interface collapses to a single session-scoped slice (see [Per-test slicing](#per-test-slicing--the-bdd-describeit-caveat)). For Cucumber, `'session'` spans every scenario in one zip; `'test'` gives one per scenario and is the recommendation. |
 | `tracePolicy` | `'on' \| 'retain-on-failure' \| 'retain-on-first-failure' \| 'on-first-retry' \| 'on-all-retries' \| 'retain-on-failure-and-retries'` | `'on'` | Which traces to keep. Pairs with `traceGranularity: 'test'`. Only applies when `mode: 'trace'`. |

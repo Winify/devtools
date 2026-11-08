@@ -1,7 +1,10 @@
-import type {
-  ArtifactManifestTest,
-  ArtifactsManifest,
-  TraceArtifact
+import {
+  isSpanId,
+  isTraceId,
+  type ArtifactManifestTest,
+  type ArtifactsManifest,
+  type TestAttemptRecord,
+  type TraceArtifact
 } from '@wdio/devtools-shared'
 
 // Narrowed to what the validators below check: `scope`/`format` are not read, `state`/`attempt` are required strings/numbers.
@@ -12,13 +15,17 @@ export type ManifestTest = Omit<ArtifactManifestTest, 'state' | 'attempt'> & {
   attempt: number
 }
 
-export type Manifest = Pick<ArtifactsManifest, 'sessionId'> & {
+export type Manifest = Pick<
+  ArtifactsManifest,
+  'sessionId' | 'runId' | 'parent'
+> & {
   artifacts: ManifestArtifact[]
   tests: ManifestTest[]
 }
 
 const MANIFEST_KEYS = ['sessionId', 'artifacts', 'tests'] as const
 const ARTIFACT_KINDS = ['trace', 'video', 'screenshot'] as const
+const MAX_TRACE_FLAGS = 0xff
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -50,6 +57,36 @@ function isNumber(value: unknown): boolean {
   return typeof value === 'number' && Number.isFinite(value)
 }
 
+function isString(value: unknown): boolean {
+  return typeof value === 'string'
+}
+
+function isAttempt(value: unknown): value is TestAttemptRecord {
+  return (
+    isRecord(value) &&
+    Number.isInteger(value.attempt) &&
+    isAbsentOr(value.state, isString) &&
+    isNumber(value.startTime) &&
+    isAbsentOr(value.endTime, isNumber) &&
+    isTraceId(value.traceId) &&
+    isSpanId(value.spanId) &&
+    isAbsentOr(value.final, (field) => typeof field === 'boolean')
+  )
+}
+
+function isParent(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isTraceId(value.traceId) &&
+    isSpanId(value.spanId) &&
+    typeof value.traceFlags === 'number' &&
+    Number.isInteger(value.traceFlags) &&
+    value.traceFlags >= 0 &&
+    value.traceFlags <= MAX_TRACE_FLAGS &&
+    isAbsentOr(value.traceState, isString)
+  )
+}
+
 function isTest(value: unknown): value is ManifestTest {
   return (
     isRecord(value) &&
@@ -61,7 +98,11 @@ function isTest(value: unknown): value is ManifestTest {
     isAbsentOr(value.startTime, isNumber) &&
     isAbsentOr(value.endTime, isNumber) &&
     isAbsentOr(value.durationMs, isNumber) &&
-    isAbsentOr(value.error, (field) => typeof field === 'string')
+    isAbsentOr(value.error, isString) &&
+    isAbsentOr(
+      value.attempts,
+      (field) => Array.isArray(field) && field.every(isAttempt)
+    )
   )
 }
 
@@ -87,6 +128,8 @@ function isManifestFile(value: unknown): value is ManifestFile {
   return (
     isRecord(value) &&
     typeof value.sessionId === 'string' &&
+    isAbsentOr(value.runId, isString) &&
+    isAbsentOr(value.parent, isParent) &&
     Array.isArray(value.artifacts) &&
     value.artifacts.every(isArtifact) &&
     Array.isArray(value.tests) &&
@@ -117,9 +160,4 @@ export function parseManifest(json: unknown, source: string): Manifest {
     )
   }
   return { ...json, tests: json.tests.filter(isTest) }
-}
-
-/** Retain policies other than `on` drop zips, so the telemetry for those tests is incomplete. */
-export function hasRetentionFilter(manifest: Manifest): boolean {
-  return manifest.artifacts.some((artifact) => !artifact.retained)
 }

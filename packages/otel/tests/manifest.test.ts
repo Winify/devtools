@@ -1,12 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { SuiteStats, TestStats } from '@wdio/devtools-shared'
-import { buildArtifactsManifest } from '../../core/src/artifacts-manifest.js'
-import { collectSuiteTestMetadata } from '../../core/src/suite-helpers.js'
-import {
-  hasRetentionFilter,
-  parseManifest,
-  type Manifest
-} from '../src/manifest.js'
+import { parseManifest, type Manifest } from '../src/manifest.js'
+
+const TRACE_ID = '4bf92f3577b34da6a3ce929d0e0e4736'
+const SPAN_ID = '00f067aa0ba902b7'
 
 const valid: Manifest = {
   sessionId: 's1',
@@ -123,74 +119,97 @@ describe('parseManifest timing and keys', () => {
   })
 })
 
-describe('hasRetentionFilter', () => {
-  it('is false when every artifact is retained', () => {
-    expect(hasRetentionFilter(valid)).toBe(false)
+describe('parseManifest run identity and attempts', () => {
+  const attempt = {
+    attempt: 0,
+    state: 'passed',
+    startTime: 1,
+    endTime: 2,
+    traceId: TRACE_ID,
+    spanId: SPAN_ID
+  }
+  const stamped = {
+    ...valid,
+    runId: 'run-7',
+    parent: {
+      traceId: TRACE_ID,
+      spanId: SPAN_ID,
+      traceFlags: 1,
+      traceState: 'vendor=x'
+    },
+    tests: [{ ...valid.tests[0], attempts: [attempt] }]
+  }
+
+  it('accepts a manifest with a run id, a parent and per-attempt ids', () => {
+    expect(parseManifest(stamped, 'm.json')).toEqual(stamped)
   })
 
-  it('is true when any artifact was decided against', () => {
-    const filtered = {
-      ...valid,
-      artifacts: [{ ...valid.artifacts[0], retained: false }]
+  it('accepts a manifest from before attempts existed', () => {
+    expect(parseManifest(valid, 'm.json')).toEqual(valid)
+  })
+
+  it('rejects a trace id that is not 32 lowercase hex characters', () => {
+    const broken = {
+      ...stamped,
+      tests: [{ ...valid.tests[0], attempts: [{ ...attempt, traceId: 'abc' }] }]
     }
-    expect(hasRetentionFilter(filtered)).toBe(true)
-  })
-})
-
-describe('a manifest written from a cucumber suite tree', () => {
-  const step = (uid: string, retries: number): TestStats => ({
-    uid,
-    cid: '0-0',
-    title: uid,
-    fullTitle: `checkout ${uid}`,
-    parent: 'scenario',
-    state: 'passed',
-    start: new Date(0),
-    end: new Date(1),
-    type: 'test',
-    file: '/a.feature',
-    retries,
-    _duration: 1
-  })
-  const suite = (
-    uid: string,
-    tests: TestStats[],
-    suites: SuiteStats[] = []
-  ): SuiteStats => ({
-    uid,
-    cid: '0-0',
-    title: uid,
-    fullTitle: uid,
-    type: 'suite',
-    file: '/a.feature',
-    start: new Date(0),
-    state: 'passed',
-    tests,
-    suites,
-    hooks: [],
-    _duration: 0
-  })
-
-  it('is accepted, with the scenario as the one test on its own attempt', () => {
-    const tree = suite(
-      'feature',
-      [],
-      [suite('scenario', [step('given', 1), step('then', 1)])]
+    expect(() => parseManifest(broken, 'm.json')).toThrow(
+      'is not an artifacts manifest'
     )
-    const manifest = buildArtifactsManifest({
-      sessionId: 's1',
-      format: 'zip',
-      artifacts: [],
-      testMetadata: collectSuiteTestMetadata([tree])
-    })
+  })
 
-    const parsed = parseManifest(
-      JSON.parse(JSON.stringify(manifest)),
-      'manifest.json'
+  it('rejects a span id that is not 16 lowercase hex characters', () => {
+    const broken = {
+      ...stamped,
+      tests: [
+        {
+          ...valid.tests[0],
+          attempts: [{ ...attempt, spanId: SPAN_ID.toUpperCase() }]
+        }
+      ]
+    }
+    expect(() => parseManifest(broken, 'm.json')).toThrow(
+      'is not an artifacts manifest'
     )
+  })
 
-    expect(parsed.tests).toEqual([
-      expect.objectContaining({ uid: 'scenario', state: 'passed', attempt: 1 })
-    ])
+  it.each([
+    ['trace', { traceId: '0'.repeat(32) }],
+    ['span', { spanId: '0'.repeat(16) }]
+  ])('rejects an all-zero %s id, which W3C reserves as invalid', (_, ids) => {
+    const broken = {
+      ...stamped,
+      tests: [{ ...valid.tests[0], attempts: [{ ...attempt, ...ids }] }]
+    }
+    expect(() => parseManifest(broken, 'm.json')).toThrow(
+      'is not an artifacts manifest'
+    )
+  })
+
+  it('rejects an attempt without a start time', () => {
+    const { startTime: _omitted, ...rest } = attempt
+    const broken = {
+      ...stamped,
+      tests: [{ ...valid.tests[0], attempts: [rest] }]
+    }
+    expect(() => parseManifest(broken, 'm.json')).toThrow(
+      'is not an artifacts manifest'
+    )
+  })
+
+  it('rejects a parent whose trace flags are out of byte range', () => {
+    const broken = {
+      ...stamped,
+      parent: { ...stamped.parent, traceFlags: 256 }
+    }
+    expect(() => parseManifest(broken, 'm.json')).toThrow(
+      'is not an artifacts manifest'
+    )
+  })
+
+  it('rejects a non-string run id', () => {
+    expect(() => parseManifest({ ...valid, runId: 7 }, 'm.json')).toThrow(
+      'is not an artifacts manifest'
+    )
   })
 })

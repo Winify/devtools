@@ -22,7 +22,7 @@ import {
   rememberReadValue,
   toError
 } from '@wdio/devtools-core'
-import { isWaitCommand } from '@wdio/devtools-shared'
+import { isWaitCommand, observesPage } from '@wdio/devtools-shared'
 import type { SessionCapturer } from '../session.js'
 import type { TestManager } from './testManager.js'
 import type {
@@ -163,6 +163,9 @@ export class BrowserProxy {
 
   /** Inject the DevTools script after every navigation; see {@link wrapNavigation}. */
   wrapUrlMethod(browser: NightwatchBrowser): void {
+    if (!observesPage(this.sessionCapturer.traceMode)) {
+      return
+    }
     wrapNavigation(browser, this.sessionCapturer)
   }
 
@@ -222,7 +225,10 @@ export class BrowserProxy {
 
     // captureAssertions:false → leave assert/verify original so no native
     // assertion rows are recorded (the finalize paths are gated to match).
-    if (this.captureAssertions) {
+    if (
+      this.captureAssertions &&
+      observesPage(this.sessionCapturer.traceMode)
+    ) {
       this.assertRecorder.wrapNamespaces(browser)
     }
     this.proxiedBrowsers.add(browser as object)
@@ -569,6 +575,9 @@ export class BrowserProxy {
       )
     )
 
+    if (!observesPage(this.sessionCapturer.traceMode)) {
+      return originalMethod(...args)
+    }
     const cmd = this.pendingCommand(methodName, args)
     const captureCallback = this.makeCaptureCallback(browser, cmd)
     // Suppress screencast polling while this command may be dispatching input: a

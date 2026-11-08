@@ -21,6 +21,8 @@ const WDIO = ADAPTER_TESTS['devtools-service']
 const SELENIUM = ADAPTER_TESTS['selenium-devtools']
 const NIGHTWATCH = ADAPTER_TESTS['nightwatch-devtools']
 const PYTHON = ADAPTER_TESTS['selenium-devtools-py']
+// Telemetry is the core finalizer's branch; no adapter adds logic of its own for it.
+const SHARED_CORE_FINALIZER = 'packages/core/tests/trace-finalizer.test.ts'
 
 const SAFARI_FOCUS_ONCE =
   'Brings Safari to the front once after the session starts (live mode, local macOS), so a click issued after another window took the front can still land nowhere.'
@@ -58,6 +60,19 @@ export const FEATURES = [
       'selenium-devtools': covered(`${SELENIUM}trace-granularity.test.ts`),
       'nightwatch-devtools': covered(`${NIGHTWATCH}traceSlices.test.ts`),
       'selenium-devtools-py': covered(`${PYTHON}test_trace_export.py`)
+    }
+  },
+  {
+    id: 'telemetry-mode',
+    name: 'Telemetry mode (artifacts manifest only, for OpenTelemetry export)',
+    tables: ['readme-trace', 'cross-framework'],
+    cells: {
+      'devtools-service': covered(SHARED_CORE_FINALIZER),
+      'selenium-devtools': covered(SHARED_CORE_FINALIZER),
+      'nightwatch-devtools': covered(SHARED_CORE_FINALIZER),
+      'selenium-devtools-py': unsupported(
+        'The Python adapter writes no artifacts manifest, so it has no telemetry mode.'
+      )
     }
   },
   {

@@ -1,6 +1,6 @@
 # @wdio/devtools-otel
 
-Pushes the results of a devtools run to an OpenTelemetry collector, so test history is searchable over time. Each test becomes one log record (pass rate, flake rate, duration, top failing tests) and, when its trace zip was retained, a trace: the test as the root span, its actions as child spans, and its tracing groups as nesting.
+Pushes the results of a devtools run to an OpenTelemetry collector, so test history is searchable over time. Each attempt of each test becomes a root span, stamped with the trace and span ids the run minted when the attempt started. With `--trace-zips` the attempt's actions become its child spans. Spans are the only signal the CLI sends: a test's pass or fail, duration and failure live on its root span.
 
 ## Usage
 
@@ -11,31 +11,42 @@ devtools-otel push out/devtools-artifacts-*.json \
 
 | Option | Meaning |
 |---|---|
-| `--artifact-base-url <url>` | Base URL the trace zips are served from. Each zip's `devtools.artifact.url` is this joined with the artifact path in its manifest. |
-| `--run-id <id>` | Run identity stamped as `devtools.run.id`. Default: the pushed manifests' sessionIds, sorted and joined with `+`. |
-| `--dry-run` | Print spans and log records to stdout instead of exporting. Needs no collector. |
+| `--artifact-base-url <url>` | Base URL the trace zips are served from. Each zip's `devtools.artifact.url` is this joined with the artifact path in its manifest. Needs no zip to be read. |
+| `--run-id <id>` | Run identity stamped as `devtools.run.id`. Default: the manifests' `runId` when they all agree, else the pushed manifests' sessionIds, sorted and joined with `+`. |
+| `--trace-zips` | Read each test's final-attempt trace zip and push its actions as child spans. Off by default, so the CLI reads no zip. A zip that is missing or unreadable warns and skips that test's actions; the rest of the push goes ahead, and the CLI then exits 1 naming each unreadable zip. |
+| `--dry-run` | Print spans to stdout instead of exporting. Needs no collector. |
 
-Every manifest you pass is pushed as one run. Use `--run-id` to name the run in CI. Input problems fail before anything is exported: preflight reads and parses every manifest and every zip it names, and if any is missing or unparseable, nothing is pushed, every problem is listed, and the exit is non-zero. Records are exported in batches and flushed once at the end, so an export failure can be a partial push: the error names the run size (`the export of <total> test(s) failed`), the exit is non-zero, and some batches may already have reached the collector. Rerunning after fixing the collector pushes the whole set again, so any record already pushed is duplicated.
+Every manifest you pass is pushed as one run. Use `--run-id` to name the run in CI. An input problem that stops the whole push (a manifest that is not JSON or not an artifacts manifest) fails before anything is exported: every problem is listed and the exit is non-zero. An export failure mid-run is a partial push: the tests before the failed one are already pushed, the error reports the count (`<n> of <total> test(s) were pushed before the export failed`), and the exit is non-zero. Rerunning after fixing the collector pushes the whole set again, so the already-pushed spans are sent twice.
 
 ## Recording side
 
-Record with `mode: 'trace'`, `traceGranularity: 'test'` and `tracePolicy: 'on'`, with the manifest enabled. `'test'` granularity gives each test its own zip; with session or spec granularity the zips are shared, so those tests get their log record but no trace (with a warning). `tracePolicy: 'on'` keeps every zip. See the NOT SUPPORTED section for why.
+Record with `mode: 'telemetry'` when you want only the telemetry. It runs no backend, opens no window and captures no per-action state. It writes the artifacts manifest and no zips, which is all `devtools-otel` needs without `--trace-zips`.
+
+Use `mode: 'trace'` with `traceGranularity: 'test'` when you also want the actions as child spans. Each test then gets its own zip, and `--trace-zips` reads it. With session or spec granularity the zips are shared, so those tests get their root span but no action spans (with a warning). `tracePolicy: 'on'` keeps every zip. Under a retain policy the zips of passing tests are dropped; the push still covers those tests, and the dropped zips are simply not linked or read.
 
 ## Configuration
 
-The collector is set with the standard OpenTelemetry variables, read by the OTLP exporters and the resource detector:
+The collector is set with the standard OpenTelemetry variables, read by the OTLP exporter and the resource detector:
 
 - `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`: where and how to send
 - `OTEL_SERVICE_NAME`: service name (default `devtools-tests`)
 - `OTEL_RESOURCE_ATTRIBUTES`: resource attributes such as branch, commit and CI run id. Put low-cardinality run identity here.
 
+## Stamped ids and TRACEPARENT
+
+The run mints each attempt's trace and span ids when the attempt starts, and writes them into the manifest with the run id. `devtools-otel` uses those ids as they are, so pushing the same manifest twice produces the same spans, and an attempt's root span has the span id the manifest names. Child spans take ids derived from their root's span id and their position, so they are stable across pushes too.
+
+If the process that starts the run has a `TRACEPARENT` environment variable (the W3C trace context header a CI job can set), the run reads it once, and each attempt joins that trace: every root span is a child of the CI parent span, and the manifest records the parent under `parent`. Retried tests therefore show every attempt under the same CI trace. A `TRACESTATE` variable is carried along when set. An invalid `TRACEPARENT` is logged and ignored.
+
+When the manifest's parent trace differs from an attempt's own trace, the CLI warns and keeps the attempt's ids, leaving that root unparented. The CLI records every span it is given regardless of the sampled flag in `TRACEPARENT`.
+
 ## Sending to a hosted platform and separating projects
 
 The upload is an OTLP/HTTP push, configured only through the standard OpenTelemetry variables:
 
-- `OTEL_EXPORTER_OTLP_ENDPOINT`: the base URL; signals are sent to `/v1/traces` and `/v1/logs` under it
+- `OTEL_EXPORTER_OTLP_ENDPOINT`: the base URL; spans are sent to `/v1/traces` under it
 - `OTEL_EXPORTER_OTLP_HEADERS`: the platform token
-- `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`: which project and environment the records belong to
+- `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`: which project and environment the spans belong to
 
 Keep tokens in CI secrets, never in files.
 
@@ -60,54 +71,42 @@ OTEL_RESOURCE_ATTRIBUTES=service.namespace=acme,deployment.environment.name=stag
   devtools-otel push out/devtools-artifacts-*.json --artifact-base-url https://bucket.example/shop-web-e2e/run-1
 ```
 
-These become filterable resource attributes on every log record and span. In the example stack's Loki (`grafana/otel-lgtm:0.37.0`) these three became stream labels (`service_namespace`, `service_name`, `deployment_environment_name`), while per-test attributes stay structured metadata; check your own Loki's OTLP label configuration. Give each project its own bucket prefix for `--artifact-base-url`, so one project's zips never sit under another's.
+These become filterable resource attributes on every span. Give each project its own bucket prefix for `--artifact-base-url`, so one project's zips never sit under another's.
 
 ## Telemetry
 
 | Attribute | On | Meaning |
 |---|---|---|
-| `test.case.name` | log, root span | Test title |
-| `test.suite.name` | log, root span | Spec file |
-| `test.case.result.status` | log, root span | `pass` or `fail`; other manifest states pass through |
-| `devtools.test.attempt` | log, root span | Attempt number of the final result |
-| `devtools.duration_ms` | log, root span | The framework-reported duration when the manifest has one; else its `endTime` minus `startTime`; else first action or group start to last action or group end (absent without any of these) |
-| `devtools.time_source` | log, root span | Where the record's timestamp came from: `manifest` (the manifest's `endTime`), `trace` (the zip's first action), or `manifest-file` (the manifest file's mtime, when neither exists) |
-| `error.message` | log, root span | For a failed test: the manifest's failure message when present, else the first failing action's error. On a passing test only the manifest's message, if any; a caught or retried command's error is never used. Capped at 4096 characters |
-| `devtools.failed_action` | log, root span | For a failed test: key of the first failing action in the final attempt's zip. Absent on a passing test |
-| `devtools.run.id` | log, root span | Run identity |
-| `devtools.artifact.url` | log, root span | URL of the retained trace zip |
+| `test.case.name` | root span | Test title |
+| `test.suite.name` | root span | Spec file |
+| `test.case.result.status` | root span | `pass` or `fail`; other states pass through. A root span takes its attempt's state |
+| `devtools.test.attempt` | root span | Attempt number |
+| `devtools.test.final_attempt` | root span | `true` on the root of the test's final attempt, `false` on each earlier attempt's root. Filter on it to count a test once |
+| `devtools.duration_ms` | root span | The framework-reported duration when the manifest has one; else the test's `endTime` minus `startTime`; else first action or group start to last action or group end under `--trace-zips` (absent without any of these) |
+| `devtools.time_source` | root span | Where the root's timing came from: `manifest` (the manifest's `endTime`), `trace` (the zip's first action, with `--trace-zips`), or `manifest-file` (the manifest file's mtime, when neither exists). A final root span carries this value; an earlier attempt's root is always `manifest`, since its timing comes from the manifest |
+| `error.message` | root span | For a failed final attempt: the manifest's failure message when present, else the first failing action's error (with `--trace-zips`). Never set on an earlier attempt, and never from a passing test's caught or retried command |
+| `devtools.failed_action` | root span | For a failed test: key of the first failing action in the final attempt's zip. Needs `--trace-zips`; absent on a passing test |
+| `devtools.run.id` | root span | Run identity |
+| `devtools.artifact.url` | root span | URL of the final attempt's trace zip, when `--artifact-base-url` is set and the zip was not dropped by a retain policy |
 | `devtools.action.key` | action span | Method plus its normalized selector; stable across runs, so passing and failing runs line up |
 | `devtools.action.index` | action span | Ordinal of the action within the test |
-| `devtools.action.method` | action span | The command the action ran (`click`, `waitForDisplayed`) |
-| `devtools.action.selector` | action span | Its normalized selector; absent when the command took none |
 
-A failed action span carries status `ERROR` and an exception event. A poll that a passing wait retried past is not failed. The commands a wait issued are child spans of the wait's span.
+Each attempt is one root span named after the test. A retried test therefore has one root per attempt, and each root's status is its own attempt's state. The trace id and span id of every root come from the manifest, as described under Stamped ids and TRACEPARENT.
 
-Two span events are added to the root span, each capped at 100 per test:
+With `--trace-zips`, error action spans carry status `ERROR` and an exception event. Console `warn`/`error` lines are span events on the root span, with `messageType`. Failed requests (status 0 or 400+) are span events with only the URL pathname (no origin, query or fragment). Each is capped at 100 per test.
 
-| Event | Attributes | Recorded for |
-|---|---|---|
-| `console` | `devtools.console.type`, `devtools.console.message` | Console `warn` and `error` lines |
-| `http.request.failed` | `url.path`, `http.request.method`, `devtools.network.status` | Requests with status 0 or 400+; the URL is reduced to its pathname (no origin, query or fragment) |
+Cucumber step entries in the manifest (entries without a `state`) are not tests: they get no span of their own, and a scenario zip that also lists its step uids counts as that one scenario's zip.
 
-Log records share the root span's trace id when a zip exists, so a log links to its trace. Tests with no retained zip, or whose zip covers several tests, still emit a log record, without a trace context; the latter is skipped with a warning on stderr. Cucumber steps are not tests: the manifest lists only scenarios, so a step gets no record of its own, and a scenario zip that also lists its step uids still counts as that one scenario's zip.
+## Timestamps
 
-## Timestamps and late records
+A root span starts and ends at its attempt's `startTime` and `endTime` in the manifest. A manifest from before attempts existed uses the test's own timing instead: its `startTime`, `endTime` and `durationMs`. Under `--trace-zips`, a root is widened to cover the zip's actions, so every action falls inside its root. A root with no timing at all is zero-width at the manifest file's mtime. The SDK never stamps push time.
 
-A log record is stamped with the test's `endTime` when the manifest has one, else the zip's first action (`devtools.time_source` says which), else the manifest file's mtime. The SDK never stamps push time. Root spans always take their times from the zip.
-
-Only the WDIO service writes per-test timing (`endTime`, `durationMs`) into the manifest. For a manifest from any other adapter, a test without a usable zip is stamped with the manifest file's mtime (`devtools.time_source=manifest-file`), and every test in that file gets the same timestamp.
-
-Records are emitted in ascending timestamp order across all manifests. If they span more than an hour, or the oldest is more than an hour behind now, the CLI warns once on stderr and still pushes.
-
-The warning matters because Loki drops entries that are about an hour behind the newest entry in a stream, and it does so silently: the push returns HTTP 200 and the entry is gone. A 2-hour-old record was verified to be dropped this way. Push promptly after the run. Loki can be configured to widen this window (`reject_old_samples_max_age`, and the out-of-order settings); check your Loki version's documentation for the exact names and defaults. The one-hour figure is what was observed, not a documented default.
+Only the WDIO service writes per-test timing (`endTime`, `durationMs`) into the manifest. For a manifest from any other adapter, a test with no timing and no zip read starts at the manifest file's mtime (`devtools.time_source=manifest-file`), and every test in that file gets the same start time.
 
 ## Attempts
 
-The trace, failed action and artifact URL come from the zip of the test's final attempt, the one `attempt` names. A passing retry therefore never carries the failing first attempt's error or zip. A manifest with no artifact keys falls back to the zip whose path has the highest `-retry<n>` suffix.
+Each attempt is pushed as its own root span. The final attempt's trace zip is the only zip read: it supplies the child spans, the failed action and the first-action timestamp. A passing retry therefore never carries the failing first attempt's error or zip. A manifest with no artifact keys falls back to the zip whose path has the highest `-retry<n>` suffix. An earlier attempt's zip never stands in for a final attempt that has none. The attempt record the writer stamped `final` is the final one; a manifest with no stamped record takes its highest-numbered record. Two tests with the same full title in the same file share one test id, so the second is read as a retry and the first is stamped failed; this is a known limitation.
 
-## NOT SUPPORTED: retain-on-failure and retain-on-first-failure
+## Retain policies
 
-`devtools-otel` cannot push a manifest with `retained: false` artifacts. Those mean a retain policy dropped zips, so the telemetry would be incomplete. The CLI prints a warning naming the manifest, skips it and exits 0. Record with `tracePolicy: 'on'`.
-
-A future version may push telemetry for every test while keeping local zips only for failures. The duration and the failing action can already be derived from the action timestamps and the first erroring action.
+A manifest recorded under `retain-on-failure` or `retain-on-first-failure` is pushed in full. Its dropped zips (`retained: false`) are neither linked nor read, so those tests have their root spans but no action spans and no artifact URL.

@@ -3,14 +3,18 @@
 This example pushes WebdriverIO devtools traces to an OTLP backend with `devtools-otel` (package `@wdio/devtools-otel`):
 
 ```
-devtools-otel push <manifest...> [--artifact-base-url <url>] [--run-id <id>] [--dry-run]
+devtools-otel push <manifest...> [--artifact-base-url <url>] [--run-id <id>] [--trace-zips] [--dry-run]
 ```
 
-For every test it emits:
+For every attempt of every test it emits:
 
-- **One log record in Loki.** This is the historical record you query for pass rate, flakiness and duration.
-- **One trace in Tempo.** This is the drill-down view. Each action becomes a span carrying `devtools.action.key` and `devtools.action.index`.
+- **One trace in Tempo, per attempt.** The attempt is the root span. It carries the trace and span ids the run recorded when the attempt started, so the same manifest pushed twice produces the same spans. The root span also carries the test's name, status, duration, run id and artifact URL as attributes, which the dashboard queries.
+- **Action spans, with `--trace-zips`.** Each action of the final attempt becomes a child span carrying `devtools.action.key` and `devtools.action.index`. The CLI reads the zip only with this flag.
 - **A link to the trace zip in your own bucket.** The zips never go to the OTLP backend. You upload them yourself, and `--artifact-base-url` tells the CLI where they live.
+
+Two tests with the same full title in the same file share one test id, so the second is read as a retry of the first and the first is stamped failed. This is a known limitation.
+
+Zips are optional. Without `--trace-zips` the CLI reads none; the replay link only needs the zip to be in the bucket at the path its manifest names.
 
 ## WDIO service configuration
 
@@ -24,13 +28,11 @@ services: [['devtools', {
 }]]
 ```
 
-The artifacts manifest is emitted by the service in trace mode as `devtools-artifacts-<sessionId>.json` in the output directory. `devtools-otel push` reads these manifests.
+The artifacts manifest is emitted by the service in trace mode as `devtools-artifacts-<sessionId>.json` in the output directory. `devtools-otel push` reads these manifests. `mode: 'telemetry'` writes the manifest with no zips, which is enough for the root spans; add `--trace-zips` only when you have zips to read.
 
-## NOT SUPPORTED
+## Retain policies
 
-`tracePolicy: 'retain-on-failure'` and `tracePolicy: 'retain-on-first-failure'` are not supported. The CLI skips such manifests with a warning, because the passing tests' zips have been dropped and the telemetry would only describe failures.
-
-The plan for the future is to emit telemetry for every test while the local zips keep only the failures.
+`tracePolicy: 'retain-on-failure'` and `tracePolicy: 'retain-on-first-failure'` are pushed in full. Every test gets its root span. The zips the policy dropped are not linked, so those tests have no replay link and, under `--trace-zips`, no action spans.
 
 ## Steps
 
@@ -40,24 +42,25 @@ The plan for the future is to emit telemetry for every test while the local zips
    ```
    `s3-init` creates the bucket `traces`, applies the read policy and CORS rule described under [One-click replay](#one-click-replay), and exits.
 2. Run your tests with the configuration above.
-3. Upload the output directory to the bucket (see the recipes below).
-4. Push the telemetry right after the run. Loki silently drops records about an hour behind the newest in a stream, and the push reports success when it does (see `packages/otel/README.md`, Timestamps and late records):
+3. Upload the output directory to the bucket (see the recipes below). Skip this when you only want the telemetry; the replay link and `--trace-zips` need the zips.
+4. Push the telemetry after the run:
    ```sh
    npx devtools-otel push devtools-output/devtools-artifacts-*.json \
-     --artifact-base-url http://127.0.0.1:9000/traces/<run-id> --run-id <run-id>
+     --artifact-base-url http://localhost:9000/traces/<run-id> --run-id <run-id> --trace-zips
    ```
+   `--trace-zips` adds the action spans from the zips you uploaded. Drop it when you did not upload them.
    Add `--dry-run` first if you want to see what would be sent.
-5. Open Grafana at http://127.0.0.1:3000. The "WebdriverIO DevTools - Test Results" dashboard is provisioned automatically from `grafana/`.
+5. Open Grafana at http://localhost:3000. The "WebdriverIO DevTools - Test Results" dashboard is provisioned automatically from `grafana/`.
 
-The stack listens on IPv4 loopback only, so its addresses are written as `127.0.0.1`: a client that resolves `localhost` to `::1` first and does not fall back would be refused. The OTLP endpoints are `127.0.0.1:4317` (gRPC) and `127.0.0.1:4318` (HTTP). The local bucket is served by [RustFS](https://github.com/rustfs/rustfs), an S3-compatible store, because MinIO no longer publishes Docker images. Any S3-compatible store works in its place. Its S3 API is on `127.0.0.1:9000` with credentials `devtools` / `devtools-secret` (local use only).
+The OTLP endpoints are `localhost:4317` (gRPC) and `localhost:4318` (HTTP). The local bucket is served by [RustFS](https://github.com/rustfs/rustfs), an S3-compatible store, because MinIO no longer publishes Docker images. Any S3-compatible store works in its place. Its S3 API is on `localhost:9000` with credentials `devtools` / `devtools-secret` (local use only). Port 9001 is published for the RustFS console, but it answers 403 with this configuration.
 
 Image tags: `grafana/otel-lgtm:0.37.0`, `rustfs/rustfs:1.0.1`, `amazon/aws-cli:2.37.13`.
 
-Verified against these tags: the `lgtm-data` volume at `/data` holds Grafana, Loki, Tempo and Prometheus state, so it survives `docker compose down`. Tempo (3200) and Loki (3100) answer on their default ports. Loki exposes the OTLP attributes as structured metadata with dots replaced by underscores (`test_case_result_status`, `devtools_duration_ms`), which is what the LogQL queries below use.
+Verified against these tags: the `lgtm-data` volume at `/data` holds Grafana, Loki, Tempo and Prometheus state, so it survives `docker compose down`. Tempo (3200) and Loki (3100) answer on their default ports.
 
 ## One-click replay
 
-The dashboard "WebdriverIO DevTools - Test Results" has a Test results table. Its Replay column links to `${player_base}/?record=<zip URL>`, where `player_base` is the dashboard's Replay host variable. Your browser fetches the zip from the bucket directly, so the zip never transits Grafana. The Replay column only shows a link when the recorded artifact URL is `http(s)://`; other URLs (for example `s3://`) stay visible as plain text in the Artifact column, and `devtools-otel push` warns when `--artifact-base-url` is not `http(s)://`.
+The dashboard "WebdriverIO DevTools - Test Results" has a Test results table. Its Artifact column shows each attempt's zip URL and links to `${player_base}/?record=<zip URL>`, where `player_base` is the dashboard's Replay host variable. Your browser fetches the zip from the bucket directly, so the zip never transits Grafana. The link is on every row, including rows with no artifact and `s3://` URLs that a browser cannot open. `devtools-otel push` warns when `--artifact-base-url` is not `http(s)://`.
 
 For the link to work, the artifact base URL must be an HTTP(S) address your browser can reach, as in step 4 above. Use https in real deployments. The bucket must allow anonymous `GET` and CORS from the replay host. `s3-init` sets both on the local stack from `s3/bucket-policy.json` and `s3/cors.json`; that CORS rule names `https://player.vibium.dev`, so a different `player_base` needs its origin added to `s3/cors.json` as well.
 
@@ -65,7 +68,7 @@ The access model is **network-private**. Anyone who can reach the bucket host ca
 
 **The replay host is an opt-in.** `player_base` (the dashboard's "Replay host" variable, default `https://player.vibium.dev`, the Vibium player) is the one setting that chooses where Replay opens a zip. Its default is this example's choice today; a dedicated hosted viewer can replace it later by changing that value. Choosing a host grants it two things: CORS read access to the bucket, so its page can fetch the zips, and the zip URL (bucket host and path) in its own URL, so the host sees every URL it is sent. Point `player_base` only at a viewer you trust with both. To change the default for everyone, edit the `player_base` variable in `grafana/devtools-dashboard.json`. This is POC-grade: it is meant for a private network and has had no security review.
 
-Chrome may prompt for local network access when player.vibium.dev fetches from a loopback (`127.0.0.1`) or private IP address. Allow it, or the replay will not load.
+Chrome may prompt for local network access when player.vibium.dev fetches from `localhost` or a private IP address. Allow it, or the replay will not load.
 
 Rows pushed with an `s3://` base URL are listed but their Replay link cannot be opened in a browser.
 
@@ -77,7 +80,7 @@ Whatever the access policy, treat a trace zip as sensitive as the run that produ
 
 ```sh
 AWS_ACCESS_KEY_ID=devtools AWS_SECRET_ACCESS_KEY=devtools-secret \
-  aws --endpoint-url http://127.0.0.1:9000 s3 cp --recursive ./devtools-output/ s3://traces/<run-id>/
+  aws --endpoint-url http://localhost:9000 s3 cp --recursive ./devtools-output/ s3://traces/<run-id>/
 ```
 
 **Amazon S3:**
@@ -112,7 +115,7 @@ jobs:
         run: aws s3 cp --recursive devtools-output/ s3://bucket/${{ github.run_id }}/
       - name: Push telemetry
         if: always()
-        run: npx devtools-otel push devtools-output/devtools-artifacts-*.json --artifact-base-url https://traces.internal.example/${{ github.run_id }}/
+        run: npx devtools-otel push devtools-output/devtools-artifacts-*.json --artifact-base-url https://traces.internal.example/${{ github.run_id }}/ --trace-zips
 ```
 
 `--artifact-base-url` must be the internal https address that serves that bucket to your browser (with CORS for `https://player.vibium.dev`, see One-click replay); an `s3://` URL is recorded but cannot be replayed. The upload step needs AWS credentials. Configure them in whatever way your organisation uses, for example `aws-actions/configure-aws-credentials`.
@@ -130,46 +133,40 @@ export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic <base64 of instanceId:tok
 
 To separate projects or teams in one backend, set `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES` as described in `packages/otel/README.md`, Sending to a hosted platform and separating projects.
 
-The provisioned dashboard currently filters on `service_name="devtools-tests"`. A project pushed under another service name shows nothing there until you edit the queries in `grafana/devtools-dashboard.json`. Project and namespace variables are a planned change.
+The provisioned dashboard currently filters on `resource.service.name="devtools-tests"`. A project pushed under another service name shows nothing there until you edit the queries in `grafana/devtools-dashboard.json`. Project and namespace variables are a planned change.
 
-## Sample queries
+## Queries
 
-These are starting points to adapt, not tested dashboards. Loki stores the record's attributes as structured metadata with dots sanitized to underscores (`test.case.result.status` becomes `test_case_result_status`). `service_name` is a stream label; `service_namespace` and `deployment_environment_name` become stream labels too when the push sets them through `OTEL_RESOURCE_ATTRIBUTES` (see `packages/otel/README.md`).
+Test results are spans in Tempo, queried with TraceQL. Every attempt is a root span named after the test, with `service.name` `devtools-tests`. Every attempt is a root span, but the dashboard's test-level panels count only each test's final attempt, selected by `span.devtools.test.final_attempt = true`, so a retried test counts once and a test that failed then passed is not a failure. The Flaky panel is the one that reads earlier attempts, through `span.devtools.test.attempt`. Spans pushed before this attribute existed carry none, so those panels do not count them. The metrics panels read a 24-hour window at most, and Tempo rejects a longer range for TraceQL metrics.
 
-**LogQL**
-
-Pass rate over the last day, out of the tests that passed or failed (skipped and pending tests keep their own state and are left out):
-
-```logql
-sum(count_over_time({service_name="devtools-tests"} | test_case_result_status="pass" [1d]))
-/
-sum(count_over_time({service_name="devtools-tests"} | test_case_result_status=~"pass|fail" [1d]))
-```
-
-Flaky tests (passed after an in-process retry; `specFileRetries` retries run in a fresh worker and are not counted):
-
-```logql
-sum by (test_case_name) (count_over_time({service_name="devtools-tests"} | test_case_result_status="pass" | devtools_test_attempt > 0 [7d]))
-```
-
-p95 test duration:
-
-```logql
-quantile_over_time(0.95, {service_name="devtools-tests"} | unwrap devtools_duration_ms [1d])
-```
-
-Top 10 failing tests:
-
-```logql
-topk(10, sum by (test_case_name) (count_over_time({service_name="devtools-tests"} | test_case_result_status="fail" [7d])))
-```
-
-**TraceQL**
-
-Failed tests:
+Passed tests in the range, from their final attempts:
 
 ```traceql
-{ span.test.case.result.status = "fail" }
+{ resource.service.name="devtools-tests" && span.test.case.result.status = "pass" && span.devtools.test.final_attempt = true } | count_over_time()
+```
+
+p95 framework-reported duration per test, from final attempts (Tempo estimates it from power-of-two histogram buckets, so values are approximate):
+
+```traceql
+{ resource.service.name="devtools-tests" && span.test.case.result.status != nil && span.devtools.test.final_attempt = true } | quantile_over_time(span.devtools.duration_ms, .95) by (span.test.case.name)
+```
+
+Top 10 failing actions, from final attempts:
+
+```traceql
+{ resource.service.name="devtools-tests" && span.test.case.result.status = "fail" && span.devtools.test.final_attempt = true && span.devtools.failed_action != nil } | count_over_time() by (span.devtools.failed_action) | topk(10)
+```
+
+Passed after an in-process retry (`specFileRetries` retries run in a fresh worker and are not counted):
+
+```traceql
+{ resource.service.name="devtools-tests" && span.test.case.result.status = "pass" && span.devtools.test.attempt > 0 } | count_over_time()
+```
+
+Failed attempts, in search (includes earlier attempts that a later one passed):
+
+```traceql
+{ resource.service.name="devtools-tests" && span.test.case.result.status = "fail" }
 ```
 
 Every run of one test, to compare a passing trace with a failing one:

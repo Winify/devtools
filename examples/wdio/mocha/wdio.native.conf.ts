@@ -55,8 +55,10 @@ export const config: WebdriverIO.Config = {
       {
         // Trace by default; DEVTOOLS_MODE=live gives the same spec a baseline to
         // measure the capture cost against.
-        mode: (process.env.DEVTOOLS_MODE === 'live' ? 'live' : 'trace') as
-          'live' | 'trace',
+        mode: (process.env.DEVTOOLS_MODE === 'live' ||
+        process.env.DEVTOOLS_MODE === 'telemetry'
+          ? process.env.DEVTOOLS_MODE
+          : 'trace') as 'live' | 'trace' | 'telemetry',
         traceGranularity: (process.env.DEVTOOLS_TRACE_GRANULARITY ??
           'session') as 'session' | 'spec' | 'test',
         tracePolicy: (process.env.DEVTOOLS_TRACE_POLICY ?? 'on') as

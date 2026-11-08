@@ -102,7 +102,9 @@ module.exports = {
         nightwatchDevtools({
           port: 3000,
           // Trace by default, matching the desktop demos.
-          mode: process.env.DEVTOOLS_MODE === 'live' ? 'live' : 'trace',
+          mode: ['live', 'telemetry'].includes(process.env.DEVTOOLS_MODE)
+            ? process.env.DEVTOOLS_MODE
+            : 'trace',
           // The BDD describe/it interface fires the plugin's beforeEach once per
           // MODULE, so per-test slicing collapses to one session-scoped slice
           // here regardless — see CLAUDE.md § Known debt.

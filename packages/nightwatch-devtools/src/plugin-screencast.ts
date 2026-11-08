@@ -10,7 +10,11 @@
  */
 
 import { accumulatedScreencastFrames } from '@wdio/devtools-core'
-import { SCREENCAST_DEFAULTS } from '@wdio/devtools-shared'
+import {
+  SCREENCAST_DEFAULTS,
+  capturesTrace,
+  startsBackend
+} from '@wdio/devtools-shared'
 import { finalizeCurrentScreencast } from './session-init.js'
 import type { SessionInitCtx } from './session-init.js'
 import type { ScreencastRecorder } from './screencast.js'
@@ -48,8 +52,11 @@ export function resolveScreencastOptions(
   input: ScreencastResolutionInput
 ): ResolvedScreencast {
   const screencast = input.screencast ?? {}
-  if (input.mode !== 'trace') {
+  if (startsBackend(input.mode)) {
     return { options: screencast }
+  }
+  if (!capturesTrace(input.mode)) {
+    return { options: {} }
   }
   if (input.filmstrip || input.video !== 'off') {
     return { options: { ...screencast, enabled: true } }

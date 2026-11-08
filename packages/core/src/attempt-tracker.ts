@@ -1,5 +1,17 @@
-import type { TestStatus } from '@wdio/devtools-shared'
+import type {
+  TestAttemptRecord,
+  TestStatus,
+  TestTraceContext
+} from '@wdio/devtools-shared'
 import type { TestOutcome } from '@wdio/devtools-trace/trace-retention'
+import { mintTraceContext, resolveParentTraceContext } from './trace-context.js'
+
+interface AttemptSlot {
+  outcome: TestOutcome
+  startTime: number
+  endTime?: number
+  trace: TestTraceContext
+}
 
 /**
  * Framework-agnostic per-test attempt ledger. Every supported runner re-enters
@@ -17,10 +29,12 @@ export interface RetryOutcomeView {
   forSpec(specFile: string): TestOutcome[]
   /** A single test's attempts; pass `attempt` to scope to one attempt's slice. */
   forTest(uid: string, attempt?: number): TestOutcome[]
+  /** Every attempt of `uid` with its timing and trace context, for the manifest. */
+  attemptsFor(uid: string): TestAttemptRecord[]
 }
 
 export class TestAttemptTracker implements RetryOutcomeView {
-  #ledger = new Map<string, { specFile?: string; attempts: TestOutcome[] }>()
+  #ledger = new Map<string, { specFile?: string; attempts: AttemptSlot[] }>()
   #sawRetry = false
 
   /** Record a starting test; returns its attempt number (0 first, +1 per rerun).
@@ -33,10 +47,16 @@ export class TestAttemptTracker implements RetryOutcomeView {
       // --require plugin) can't observe the failed attempt's state from their
       // outcome hook and report it as passed — the retry starting IS the
       // reliable failure signal, so stamp the prior attempt failed here.
-      entry.attempts[entry.attempts.length - 1].state = 'failed'
+      const prior = entry.attempts[entry.attempts.length - 1]!
+      prior.outcome.state = 'failed'
+      prior.endTime ??= Date.now()
     }
     const attempt = entry ? entry.attempts.length : 0
-    const slot: TestOutcome = { uid, attempt }
+    const slot: AttemptSlot = {
+      outcome: { uid, attempt },
+      startTime: Date.now(),
+      trace: mintTraceContext(resolveParentTraceContext())
+    }
     if (entry) {
       entry.attempts.push(slot)
       if (specFile !== undefined) {
@@ -61,9 +81,10 @@ export class TestAttemptTracker implements RetryOutcomeView {
     if (!slot) {
       return
     }
-    slot.state = state
+    slot.outcome.state = state
+    slot.endTime = Date.now()
     if (attempt !== undefined) {
-      slot.attempt = attempt
+      slot.outcome.attempt = attempt
     }
   }
 
@@ -81,7 +102,7 @@ export class TestAttemptTracker implements RetryOutcomeView {
   all(): TestOutcome[] {
     const out: TestOutcome[] = []
     for (const entry of this.#ledger.values()) {
-      out.push(...entry.attempts)
+      out.push(...entry.attempts.map((slot) => slot.outcome))
     }
     return out
   }
@@ -90,17 +111,30 @@ export class TestAttemptTracker implements RetryOutcomeView {
     const out: TestOutcome[] = []
     for (const entry of this.#ledger.values()) {
       if (entry.specFile === specFile) {
-        out.push(...entry.attempts)
+        out.push(...entry.attempts.map((slot) => slot.outcome))
       }
     }
     return out
   }
 
   forTest(uid: string, attempt?: number): TestOutcome[] {
-    const attempts = this.#ledger.get(uid)?.attempts ?? []
+    const outcomes = (this.#ledger.get(uid)?.attempts ?? []).map(
+      (slot) => slot.outcome
+    )
     return attempt === undefined
-      ? attempts
-      : attempts.filter((a) => a.attempt === attempt)
+      ? outcomes
+      : outcomes.filter((o) => o.attempt === attempt)
+  }
+
+  attemptsFor(uid: string): TestAttemptRecord[] {
+    return (this.#ledger.get(uid)?.attempts ?? []).map((slot) => ({
+      attempt: slot.outcome.attempt ?? 0,
+      state: slot.outcome.state,
+      startTime: slot.startTime,
+      endTime: slot.endTime,
+      traceId: slot.trace.traceId,
+      spanId: slot.trace.spanId
+    }))
   }
 
   /** Clear all state — used at session boundaries and reuse-mode reconnects. */

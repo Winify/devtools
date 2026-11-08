@@ -3,7 +3,7 @@ import { readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
 import { CLI_USAGE, isBrowserFetchable, parseCliArgs } from './cli-args.js'
-import { hasRetentionFilter, parseManifest } from './manifest.js'
+import { parseManifest } from './manifest.js'
 import { createTelemetry } from './providers.js'
 import { planPush, type ManifestInput } from './to-telemetry.js'
 
@@ -42,16 +42,17 @@ function loadManifests(files: string[]): {
   return { loaded, problems }
 }
 
-function withoutRetentionFilter(loaded: ManifestInput[]): ManifestInput[] {
-  return loaded.filter(({ file, manifest }) => {
-    if (hasRetentionFilter(manifest)) {
-      process.stderr.write(
-        `devtools-otel: skipped ${file}: it has retained:false artifacts, so a retain-on-failure or retain-on-first-failure policy ran. Set tracePolicy:'on' so every test's trace is kept.\n`
-      )
-      return false
-    }
-    return true
-  })
+function reportProblems(header: string, items: string[]): void {
+  process.stderr.write(
+    `devtools-otel: ${header}\n${items.map((item) => `  - ${item}\n`).join('')}`
+  )
+}
+
+function reportUnreadable(zips: string[]): void {
+  reportProblems(
+    `${zips.length} trace zip(s) requested by --trace-zips could not be read, so their actions are missing:`,
+    zips
+  )
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -66,34 +67,38 @@ async function main(argv: string[]): Promise<number> {
     )
   }
   const { loaded, problems } = loadManifests(args.manifests)
-  const pushable = withoutRetentionFilter(loaded)
+  if (problems.length > 0) {
+    reportProblems(`nothing pushed, ${problems.length} problem(s):`, problems)
+    return 1
+  }
+  const runIds = new Set(loaded.map(({ manifest }) => manifest.runId))
+  const manifestRunId = runIds.size === 1 ? [...runIds][0] : undefined
   const runId =
     args.runId ??
-    pushable
+    manifestRunId ??
+    loaded
       .map(({ manifest }) => manifest.sessionId)
       .sort()
       .join(RUN_ID_SEPARATOR)
   const plan = planPush({
-    manifests: pushable,
+    manifests: loaded,
     runId,
-    nowMs: Date.now(),
     artifactBaseUrl: args.artifactBaseUrl,
+    traceZips: args.traceZips,
     loadZip: (zipPath) => readFileSync(zipPath),
     warn: (message) => process.stderr.write(`devtools-otel: ${message}\n`)
   })
-  const allProblems = [...problems, ...plan.problems]
-  if (allProblems.length > 0) {
-    process.stderr.write(
-      `devtools-otel: nothing pushed, ${allProblems.length} problem(s):\n${allProblems.map((problem) => `  - ${problem}\n`).join('')}`
-    )
-    return 1
-  }
   const telemetry = createTelemetry({ dryRun: args.dryRun })
   try {
     const tests = await plan.emit(telemetry)
     process.stdout.write(
-      `devtools-otel: pushed ${tests} test(s) from ${pushable.length} manifest(s) as run ${runId}\n`
+      `devtools-otel: pushed ${tests} test(s) from ${loaded.length} manifest(s) as run ${runId}\n`
     )
+    const unreadable = plan.unreadable()
+    if (unreadable.length > 0) {
+      reportUnreadable(unreadable)
+      return 1
+    }
     return 0
   } finally {
     await telemetry.shutdown()

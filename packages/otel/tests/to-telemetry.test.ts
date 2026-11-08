@@ -1,27 +1,21 @@
 import path from 'node:path'
 import { SpanStatusCode } from '@opentelemetry/api'
-import { SeverityNumber } from '@opentelemetry/api-logs'
-import {
-  InMemoryLogRecordExporter,
-  LoggerProvider,
-  SimpleLogRecordProcessor
-} from '@opentelemetry/sdk-logs'
 import {
   InMemorySpanExporter,
   SimpleSpanProcessor,
   TracerProvider,
   type ReadableSpan
 } from '@opentelemetry/sdk-trace'
+import type { TestAttemptRecord } from '@wdio/devtools-shared'
 import { buildTraceZip } from '@wdio/devtools-trace'
 import { describe, expect, it } from 'vitest'
 import * as attr from '../src/attributes.js'
 import type { Manifest } from '../src/manifest.js'
-import { planPush } from '../src/to-telemetry.js'
+import { derivedSpanId, PinnedIdGenerator } from '../src/span-ids.js'
+import { planPush, type PushPlan } from '../src/to-telemetry.js'
 
 const EPOCH_2025 = Date.UTC(2025, 0, 1, 10, 0, 0)
-const HOUR_MS = 60 * 60 * 1000
 const MTIME_MS = EPOCH_2025 - 5000
-const NOW_MS = EPOCH_2025 + 60_000
 const RUN_DIR = path.resolve('otel-run')
 const MANIFEST_FILE = path.join(RUN_DIR, 'devtools-artifacts-s1.json')
 const ZIP_PATH = path.join(RUN_DIR, 'traces', 's1-login.zip')
@@ -143,22 +137,20 @@ function manifestOf(overrides: Partial<Manifest> = {}): Manifest {
 }
 
 interface PushOptions {
-  manifests?: { file: string; manifest: Manifest; mtimeMs?: number }[]
+  manifests?: { file: string; manifest: Manifest }[]
   zips?: Map<string, Uint8Array>
   artifactBaseUrl?: string
-  nowMs?: number
   flush?: () => Promise<void>
+  traceZips?: boolean
 }
 
 async function push(options: PushOptions = {}) {
   const warnings: string[] = []
   const spanExporter = new InMemorySpanExporter()
-  const logExporter = new InMemoryLogRecordExporter()
+  const ids = new PinnedIdGenerator()
   const tracerProvider = new TracerProvider({
+    idGenerator: ids,
     spanProcessors: [new SimpleSpanProcessor({ exporter: spanExporter })]
-  })
-  const loggerProvider = new LoggerProvider({
-    processors: [new SimpleLogRecordProcessor({ exporter: logExporter })]
   })
   const zips = options.zips ?? new Map([[ZIP_PATH, await zipOf(loginEvents)]])
   const manifests = options.manifests ?? [
@@ -167,8 +159,8 @@ async function push(options: PushOptions = {}) {
   const plan = planPush({
     manifests: manifests.map((entry) => ({ mtimeMs: MTIME_MS, ...entry })),
     runId: 'run-1',
-    nowMs: options.nowMs ?? NOW_MS,
     artifactBaseUrl: options.artifactBaseUrl,
+    traceZips: options.traceZips ?? true,
     loadZip: (zipPath) => {
       const zip = zips.get(zipPath)
       if (!zip) {
@@ -178,18 +170,14 @@ async function push(options: PushOptions = {}) {
     },
     warn: (message) => warnings.push(message)
   })
-  if (plan.problems.length === 0) {
-    await plan.emit({
-      tracer: tracerProvider.getTracer('test'),
-      logger: loggerProvider.getLogger('test'),
-      flush: options.flush ?? (async () => {})
-    })
-  }
+  await plan.emit({
+    tracer: tracerProvider.getTracer('test'),
+    ids,
+    flush: options.flush ?? (async () => {})
+  })
   return {
     spans: spanExporter.getFinishedSpans(),
-    logs: logExporter.getFinishedLogRecords(),
-    warnings,
-    problems: plan.problems
+    warnings
   }
 }
 
@@ -445,23 +433,19 @@ describe('pushRun span tree', () => {
   })
 })
 
-describe('pushRun logs', () => {
-  it('emits one ERROR log per failed test, inside the root span context', async () => {
-    const { spans, logs } = await push()
+describe('pushRun root spans', () => {
+  it('names the root of a failed test with its status, suite and run', async () => {
+    const { spans } = await push()
     const root = byName(spans, 'logs in')
-    expect(logs).toHaveLength(1)
-    const [log] = logs
-    expect(log.severityNumber).toBe(SeverityNumber.ERROR)
-    expect(log.spanContext?.traceId).toBe(root.spanContext().traceId)
-    expect(log.spanContext?.spanId).toBe(root.spanContext().spanId)
-    expect(log.attributes[attr.ATTR_TEST_CASE_RESULT_STATUS]).toBe(
+    expect(root.status.code).toBe(SpanStatusCode.ERROR)
+    expect(root.attributes[attr.ATTR_TEST_CASE_RESULT_STATUS]).toBe(
       attr.TEST_CASE_RESULT_STATUS_FAIL
     )
-    expect(log.attributes[attr.ATTR_TEST_CASE_NAME]).toBe('logs in')
-    expect(log.attributes[attr.ATTR_TEST_SUITE_NAME]).toBe(
+    expect(root.attributes[attr.ATTR_TEST_CASE_NAME]).toBe('logs in')
+    expect(root.attributes[attr.ATTR_TEST_SUITE_NAME]).toBe(
       'specs/login.spec.ts'
     )
-    expect(log.attributes[attr.ATTR_RUN_ID]).toBe('run-1')
+    expect(root.attributes[attr.ATTR_RUN_ID]).toBe('run-1')
   })
 
   it('derives no failure from a passing test whose traced command erred', async () => {
@@ -476,7 +460,7 @@ describe('pushRun logs', () => {
         }
       ]
     })
-    const { spans, logs } = await push({
+    const { spans } = await push({
       manifests: [{ file: MANIFEST_FILE, manifest }]
     })
     const root = byName(spans, 'logs in')
@@ -486,11 +470,9 @@ describe('pushRun logs', () => {
     expect(root.status.code).not.toBe(SpanStatusCode.ERROR)
     expect(root.attributes[attr.ATTR_ERROR_MESSAGE]).toBeUndefined()
     expect(root.attributes[attr.ATTR_FAILED_ACTION]).toBeUndefined()
-    expect(logs[0].attributes[attr.ATTR_ERROR_MESSAGE]).toBeUndefined()
-    expect(logs[0].attributes[attr.ATTR_FAILED_ACTION]).toBeUndefined()
   })
 
-  it('maps a passing test to pass and an INFO log', async () => {
+  it('maps a passing test to a pass status on its final attempt', async () => {
     const manifest = manifestOf({
       tests: [
         {
@@ -502,47 +484,45 @@ describe('pushRun logs', () => {
         }
       ]
     })
-    const { spans, logs } = await push({
+    const { spans } = await push({
       manifests: [{ file: MANIFEST_FILE, manifest }]
     })
-    expect(byName(spans, 'logs in').status.code).not.toBe(SpanStatusCode.ERROR)
-    expect(logs[0].severityNumber).toBe(SeverityNumber.INFO)
-    expect(logs[0].attributes[attr.ATTR_TEST_CASE_RESULT_STATUS]).toBe(
+    const root = byName(spans, 'logs in')
+    expect(root.status.code).not.toBe(SpanStatusCode.ERROR)
+    expect(root.attributes[attr.ATTR_TEST_CASE_RESULT_STATUS]).toBe(
       attr.TEST_CASE_RESULT_STATUS_PASS
     )
-    expect(logs[0].attributes[attr.ATTR_TEST_ATTEMPT]).toBe(2)
+    expect(root.attributes[attr.ATTR_TEST_ATTEMPT]).toBe(2)
   })
 
-  it('emits a log without a trace context for a test that has no retained zip', async () => {
+  it('roots a test with no retained zip in its own span without a duration', async () => {
     const manifest = manifestOf({ artifacts: [] })
-    const { spans, logs } = await push({
+    const { spans } = await push({
       manifests: [{ file: MANIFEST_FILE, manifest }]
     })
-    expect(spans).toHaveLength(0)
-    expect(logs).toHaveLength(1)
-    expect(logs[0].spanContext).toBeUndefined()
-    expect(logs[0].attributes[attr.ATTR_DURATION_MS]).toBeUndefined()
+    expect(spans.map((span) => span.name)).toEqual(['logs in'])
+    expect(byName(spans, 'logs in').attributes[attr.ATTR_DURATION_MS]).toBe(
+      undefined
+    )
   })
 
   it('links the artifact URL to the zip relative to the base URL', async () => {
-    const { spans, logs } = await push({
+    const { spans } = await push({
       artifactBaseUrl: 'https://bucket.example/run-1'
     })
-    const expected = 'https://bucket.example/run-1/traces/s1-login.zip'
     expect(byName(spans, 'logs in').attributes[attr.ATTR_ARTIFACT_URL]).toBe(
-      expected
+      'https://bucket.example/run-1/traces/s1-login.zip'
     )
-    expect(logs[0].attributes[attr.ATTR_ARTIFACT_URL]).toBe(expected)
   })
 
   it('links an absolute artifact path relative to its manifest directory', async () => {
     const manifest = manifestOf()
     manifest.artifacts[0].path = path.join(RUN_DIR, 'traces/s1-login.zip')
-    const { logs } = await push({
+    const { spans } = await push({
       manifests: [{ file: MANIFEST_FILE, manifest }],
       artifactBaseUrl: 'https://bucket.example/run-1'
     })
-    expect(logs[0].attributes[attr.ATTR_ARTIFACT_URL]).toBe(
+    expect(byName(spans, 'logs in').attributes[attr.ATTR_ARTIFACT_URL]).toBe(
       'https://bucket.example/run-1/traces/s1-login.zip'
     )
   })
@@ -550,14 +530,14 @@ describe('pushRun logs', () => {
   it('percent-encodes reserved characters in the artifact path', async () => {
     const manifest = manifestOf()
     manifest.artifacts[0].path = 'traces/s1 #2.zip'
-    const { logs } = await push({
+    const { spans } = await push({
       manifests: [{ file: MANIFEST_FILE, manifest }],
       zips: new Map([
         [path.join(RUN_DIR, 'traces', 's1 #2.zip'), await zipOf(loginEvents)]
       ]),
       artifactBaseUrl: 'https://bucket.example/run-1'
     })
-    expect(logs[0].attributes[attr.ATTR_ARTIFACT_URL]).toBe(
+    expect(byName(spans, 'logs in').attributes[attr.ATTR_ARTIFACT_URL]).toBe(
       'https://bucket.example/run-1/traces/s1%20%232.zip'
     )
   })
@@ -573,25 +553,26 @@ describe('pushRun logs', () => {
         }
       ]
     })
-    const { spans, logs, warnings } = await push({
+    const { spans, warnings } = await push({
       manifests: [{ file: MANIFEST_FILE, manifest }]
     })
     expect(byName(spans, 'logs in')).toBeDefined()
-    expect(logs[0].spanContext).toBeDefined()
     expect(warnings).toHaveLength(0)
   })
 
   it('links no artifact URL for a zip outside the manifest directory and warns', async () => {
     const manifest = manifestOf()
     manifest.artifacts[0].path = '../elsewhere/s1.zip'
-    const { logs, warnings } = await push({
+    const { spans, warnings } = await push({
       manifests: [{ file: MANIFEST_FILE, manifest }],
       zips: new Map([
         [path.resolve(RUN_DIR, '../elsewhere/s1.zip'), await zipOf(loginEvents)]
       ]),
       artifactBaseUrl: 'https://bucket.example/run-1'
     })
-    expect(logs[0].attributes[attr.ATTR_ARTIFACT_URL]).toBeUndefined()
+    expect(
+      byName(spans, 'logs in').attributes[attr.ATTR_ARTIFACT_URL]
+    ).toBeUndefined()
     expect(warnings).toHaveLength(1)
     expect(warnings[0]).toContain('outside the manifest directory')
   })
@@ -623,12 +604,13 @@ describe('pushRun logs', () => {
         }
       ]
     })
-    const { spans, logs, warnings } = await push({
+    const { spans, warnings } = await push({
       manifests: [{ file: MANIFEST_FILE, manifest }]
     })
-    expect(spans).toHaveLength(0)
-    expect(logs).toHaveLength(2)
-    expect(logs.every((log) => log.spanContext === undefined)).toBe(true)
+    expect(spans.map((span) => span.name).sort()).toEqual(['logs in', 'other'])
+    expect(spans.every((span) => span.parentSpanContext === undefined)).toBe(
+      true
+    )
     expect(warnings).toHaveLength(1)
     expect(warnings[0]).toContain("traceGranularity:'test' is required")
   })
@@ -647,7 +629,7 @@ describe('pushRun logs', () => {
         }
       ]
     })
-    const { logs } = await push({
+    const { spans } = await push({
       manifests: [
         { file: MANIFEST_FILE, manifest: manifestOf() },
         {
@@ -656,9 +638,13 @@ describe('pushRun logs', () => {
         }
       ]
     })
-    expect(logs).toHaveLength(2)
+    const roots = [
+      ...rootsNamed(spans, 'logs in'),
+      ...rootsNamed(spans, 'other')
+    ]
+    expect(roots).toHaveLength(2)
     expect(
-      new Set(logs.map((log) => log.attributes[attr.ATTR_RUN_ID]))
+      new Set(roots.map((root) => root.attributes[attr.ATTR_RUN_ID]))
     ).toEqual(new Set(['run-1']))
   })
 })
@@ -717,26 +703,24 @@ describe('pushRun attempt selection', () => {
     ])
 
   it('records the final attempt, not the failing first attempt', async () => {
-    const { spans, logs, problems } = await push({
+    const { spans, warnings } = await push({
       manifests: [
         { file: MANIFEST_FILE, manifest: retriedManifest(keyedArtifacts) }
       ],
       zips: await retryZips(),
       artifactBaseUrl: 'https://bucket.example/run-1'
     })
-    expect(problems).toEqual([])
-    const [log] = logs
-    expect(log.attributes[attr.ATTR_TEST_CASE_RESULT_STATUS]).toBe(
+    expect(warnings).toEqual([])
+    const root = byName(spans, RETRIED_TITLE)
+    expect(root.attributes[attr.ATTR_TEST_CASE_RESULT_STATUS]).toBe(
       attr.TEST_CASE_RESULT_STATUS_PASS
     )
-    expect(log.attributes[attr.ATTR_ERROR_MESSAGE]).toBeUndefined()
-    expect(log.attributes[attr.ATTR_FAILED_ACTION]).toBeUndefined()
-    expect(log.attributes[attr.ATTR_ARTIFACT_URL]).toBe(
+    expect(root.attributes[attr.ATTR_ERROR_MESSAGE]).toBeUndefined()
+    expect(root.attributes[attr.ATTR_FAILED_ACTION]).toBeUndefined()
+    expect(root.attributes[attr.ATTR_ARTIFACT_URL]).toBe(
       'https://bucket.example/run-1/b-retry1/trace.zip'
     )
-    expect(byName(spans, RETRIED_TITLE).status.code).not.toBe(
-      SpanStatusCode.ERROR
-    )
+    expect(root.status.code).not.toBe(SpanStatusCode.ERROR)
   })
 
   it('falls back to the highest retry suffix when the manifest has no keys', async () => {
@@ -748,30 +732,33 @@ describe('pushRun attempt selection', () => {
         retained
       })
     )
-    const { logs } = await push({
+    const { spans } = await push({
       manifests: [{ file: MANIFEST_FILE, manifest: retriedManifest(unkeyed) }],
       zips: await retryZips(),
       artifactBaseUrl: 'https://bucket.example/run-1'
     })
-    expect(logs[0].attributes[attr.ATTR_ERROR_MESSAGE]).toBeUndefined()
-    expect(logs[0].attributes[attr.ATTR_ARTIFACT_URL]).toBe(
-      'https://bucket.example/run-1/b-retry1/trace.zip'
-    )
+    expect(
+      byName(spans, RETRIED_TITLE).attributes[attr.ATTR_ERROR_MESSAGE]
+    ).toBeUndefined()
+    expect(
+      byName(spans, RETRIED_TITLE).attributes[attr.ATTR_ARTIFACT_URL]
+    ).toBe('https://bucket.example/run-1/b-retry1/trace.zip')
   })
 
   it('never stands an earlier attempt zip in for a final attempt that has none', async () => {
     const firstOnly: Manifest['artifacts'] = [keyedArtifacts[0]]
-    const { logs, problems } = await push({
+    const { spans, warnings } = await push({
       manifests: [
         { file: MANIFEST_FILE, manifest: retriedManifest(firstOnly) }
       ],
       zips: await retryZips()
     })
-    expect(problems).toEqual([])
-    expect(logs[0].spanContext).toBeUndefined()
-    expect(logs[0].attributes[attr.ATTR_ERROR_MESSAGE]).toBeUndefined()
-    expect(logs[0].attributes[attr.ATTR_ARTIFACT_URL]).toBeUndefined()
-    expect(logs[0].attributes[attr.ATTR_TIME_SOURCE]).toBe(
+    expect(warnings).toEqual([])
+    expect(spans.map((span) => span.name)).toEqual([RETRIED_TITLE])
+    const root = byName(spans, RETRIED_TITLE)
+    expect(root.attributes[attr.ATTR_ERROR_MESSAGE]).toBeUndefined()
+    expect(root.attributes[attr.ATTR_ARTIFACT_URL]).toBeUndefined()
+    expect(root.attributes[attr.ATTR_TIME_SOURCE]).toBe(
       attr.TIME_SOURCE_MANIFEST_FILE
     )
   })
@@ -794,17 +781,17 @@ describe('pushRun timing', () => {
         }
       ]
     })
-    const { spans, logs } = await push({
+    const { spans } = await push({
       manifests: [{ file: MANIFEST_FILE, manifest }]
     })
-    const [log] = logs
-    expect(toMs(log.hrTime)).toBe(EPOCH_2025 + 9000)
-    expect(log.attributes[attr.ATTR_DURATION_MS]).toBe(8500)
-    expect(log.attributes[attr.ATTR_ERROR_MESSAGE]).toBe('framework says no')
-    expect(log.attributes[attr.ATTR_TIME_SOURCE]).toBe(
+    const root = byName(spans, 'logs in')
+    expect(toMs(root.endTime)).toBe(EPOCH_2025 + 9000)
+    expect(root.attributes[attr.ATTR_DURATION_MS]).toBe(8500)
+    expect(root.attributes[attr.ATTR_ERROR_MESSAGE]).toBe('framework says no')
+    expect(root.attributes[attr.ATTR_TIME_SOURCE]).toBe(
       attr.TIME_SOURCE_MANIFEST
     )
-    expect(toMs(byName(spans, 'logs in').startTime)).toBe(EPOCH_2025 + 1000)
+    expect(toMs(root.startTime)).toBe(EPOCH_2025 + 500)
   })
 
   it('derives the duration from start and end when the manifest gives no durationMs', async () => {
@@ -822,117 +809,32 @@ describe('pushRun timing', () => {
         }
       ]
     })
-    const { logs } = await push({
+    const { spans } = await push({
       manifests: [{ file: MANIFEST_FILE, manifest }]
     })
-    expect(logs[0].attributes[attr.ATTR_DURATION_MS]).toBe(8000)
+    expect(byName(spans, 'logs in').attributes[attr.ATTR_DURATION_MS]).toBe(
+      8000
+    )
   })
 
-  it('timestamps a record with no zip and no manifest timing from the manifest file', async () => {
-    const { logs } = await push({
+  it('starts a test with no zip and no manifest timing at the manifest file mtime', async () => {
+    const { spans } = await push({
       manifests: [
         { file: MANIFEST_FILE, manifest: manifestOf({ artifacts: [] }) }
       ]
     })
-    expect(toMs(logs[0].hrTime)).toBe(MTIME_MS)
-    expect(logs[0].attributes[attr.ATTR_TIME_SOURCE]).toBe(
+    const root = byName(spans, 'logs in')
+    expect(toMs(root.startTime)).toBe(MTIME_MS)
+    expect(root.attributes[attr.ATTR_TIME_SOURCE]).toBe(
       attr.TIME_SOURCE_MANIFEST_FILE
     )
   })
 
-  it('stamps trace-derived records with trace time', async () => {
-    const { logs } = await push()
-    expect(toMs(logs[0].hrTime)).toBe(EPOCH_2025 + 1000)
-    expect(logs[0].attributes[attr.ATTR_TIME_SOURCE]).toBe(
-      attr.TIME_SOURCE_TRACE
-    )
-  })
-
-  it('emits records in ascending timestamp order across manifests', async () => {
-    const late = manifestOf({
-      artifacts: [],
-      tests: [
-        {
-          uid: 'late',
-          title: 'late',
-          specFile: 'specs/a.spec.ts',
-          state: 'passed',
-          attempt: 0,
-          endTime: EPOCH_2025 + 9000
-        }
-      ]
-    })
-    const early = manifestOf({
-      sessionId: 's2',
-      artifacts: [],
-      tests: [
-        {
-          uid: 'early',
-          title: 'early',
-          specFile: 'specs/b.spec.ts',
-          state: 'passed',
-          attempt: 0,
-          endTime: EPOCH_2025 + 1000
-        }
-      ]
-    })
-    const { logs } = await push({
-      manifests: [
-        { file: MANIFEST_FILE, manifest: late },
-        {
-          file: path.join(RUN_DIR, 'devtools-artifacts-s2.json'),
-          manifest: early
-        }
-      ]
-    })
-    expect(logs.map((log) => log.body)).toEqual(['early', 'late'])
-  })
-
-  it('warns once when the records span more than an hour', async () => {
-    const manifest = manifestOf({
-      artifacts: [],
-      tests: [
-        {
-          uid: 'old',
-          title: 'old',
-          specFile: 'specs/a.spec.ts',
-          state: 'passed',
-          attempt: 0,
-          endTime: EPOCH_2025 - 2 * HOUR_MS
-        },
-        {
-          uid: 'new',
-          title: 'new',
-          specFile: 'specs/a.spec.ts',
-          state: 'passed',
-          attempt: 0,
-          endTime: EPOCH_2025 + 1000
-        }
-      ]
-    })
-    const { warnings } = await push({
-      manifests: [{ file: MANIFEST_FILE, manifest }]
-    })
-    expect(warnings).toHaveLength(1)
-    expect(warnings[0]).toContain('Loki')
-    expect(warnings[0]).toContain(
-      new Date(EPOCH_2025 - 2 * HOUR_MS).toISOString()
-    )
-    expect(warnings[0]).toContain('packages/otel/README.md')
-  })
-
-  it('warns when the oldest record is more than an hour behind now', async () => {
-    const { warnings } = await push({
-      nowMs: EPOCH_2025 + 2 * HOUR_MS,
-      manifests: [
-        {
-          file: MANIFEST_FILE,
-          manifest: manifestOf({ artifacts: [] }),
-          mtimeMs: MTIME_MS
-        }
-      ]
-    })
-    expect(warnings).toHaveLength(1)
+  it('stamps trace-derived roots with trace time', async () => {
+    const { spans } = await push()
+    const root = byName(spans, 'logs in')
+    expect(toMs(root.startTime)).toBe(EPOCH_2025 + 1000)
+    expect(root.attributes[attr.ATTR_TIME_SOURCE]).toBe(attr.TIME_SOURCE_TRACE)
   })
 })
 
@@ -1000,8 +902,8 @@ describe('pushRun export failure', () => {
   })
 })
 
-describe('pushRun preflight', () => {
-  it('lists every unreadable zip and plans no records', async () => {
+describe('pushRun unreadable zips', () => {
+  it('warns about every unreadable zip and still pushes every record', async () => {
     const second = manifestOf({
       sessionId: 's2',
       artifacts: [
@@ -1013,7 +915,7 @@ describe('pushRun preflight', () => {
         }
       ]
     })
-    const { logs, problems } = await push({
+    const { spans, warnings } = await push({
       manifests: [
         { file: MANIFEST_FILE, manifest: manifestOf() },
         {
@@ -1025,9 +927,412 @@ describe('pushRun preflight', () => {
         [path.join(RUN_DIR, 'traces', 'bad.zip'), new Uint8Array([1, 2, 3])]
       ])
     })
-    expect(problems).toHaveLength(2)
-    expect(problems[0]).toContain(ZIP_PATH)
-    expect(problems[1]).toContain(path.join(RUN_DIR, 'traces', 'bad.zip'))
-    expect(logs).toHaveLength(0)
+    expect(warnings).toHaveLength(2)
+    expect(warnings[0]).toContain(ZIP_PATH)
+    expect(warnings[1]).toContain(path.join(RUN_DIR, 'traces', 'bad.zip'))
+    expect(rootsNamed(spans, 'logs in')).toHaveLength(2)
+  })
+})
+
+const TRACE_A = '0af7651916cd43dd8448eb211c80319c'
+const PARENT_SPAN = '1111222233334444'
+const attemptRecord = (
+  attempt: number,
+  state: TestAttemptRecord['state'],
+  spanId: string,
+  traceId = TRACE_A
+): TestAttemptRecord => ({
+  attempt,
+  state,
+  startTime: EPOCH_2025 + attempt * 1000,
+  endTime: EPOCH_2025 + attempt * 1000 + 500,
+  traceId,
+  spanId
+})
+
+const stampedManifest = (
+  attempts: TestAttemptRecord[],
+  overrides: Partial<Manifest> = {}
+): Manifest =>
+  manifestOf({
+    artifacts: [],
+    tests: [
+      {
+        uid: 'uid-login',
+        title: 'logs in',
+        specFile: 'specs/login.spec.ts',
+        state: 'failed',
+        attempt: attempts[attempts.length - 1].attempt,
+        attempts
+      }
+    ],
+    ...overrides
+  })
+
+const rootsNamed = (spans: ReadableSpan[], name: string): ReadableSpan[] =>
+  spans.filter((span) => span.name === name)
+
+describe('pushRun stamped ids', () => {
+  it('roots each attempt with the trace and span ids the manifest records', async () => {
+    const manifest = stampedManifest([
+      attemptRecord(0, 'failed', '000000000000aaa1'),
+      attemptRecord(1, 'failed', 'bbbbbbbbbbbbbbb2')
+    ])
+    const { spans } = await push({
+      manifests: [{ file: MANIFEST_FILE, manifest }],
+      traceZips: false
+    })
+    const roots = rootsNamed(spans, 'logs in')
+    expect(roots.map((root) => root.spanContext().spanId)).toEqual([
+      '000000000000aaa1',
+      'bbbbbbbbbbbbbbb2'
+    ])
+    expect(roots.every((root) => root.spanContext().traceId === TRACE_A)).toBe(
+      true
+    )
+    expect(
+      roots.map((root) => root.attributes[attr.ATTR_TEST_ATTEMPT])
+    ).toEqual([0, 1])
+    expect(roots.map((root) => root.status.code)).toEqual([
+      SpanStatusCode.ERROR,
+      SpanStatusCode.ERROR
+    ])
+    expect(roots[1].attributes[attr.ATTR_ERROR_MESSAGE]).toBeUndefined()
+    expect(toMs(roots[0].startTime)).toBe(EPOCH_2025)
+    expect(toMs(roots[1].endTime)).toBe(EPOCH_2025 + 1500)
+  })
+
+  it('pushes the same ids, children included, on every push', async () => {
+    const manifest = stampedManifest(
+      [attemptRecord(1, 'failed', 'c0ffee0123456789')],
+      {
+        artifacts: [
+          {
+            kind: 'trace',
+            path: 'traces/s1-login.zip',
+            testUids: ['uid-login'],
+            retained: true
+          }
+        ]
+      }
+    )
+    const ids = async () =>
+      (await push({ manifests: [{ file: MANIFEST_FILE, manifest }] })).spans
+        .map((span) => `${span.name}:${span.spanContext().spanId}`)
+        .sort()
+    const first = await ids()
+    expect(first.length).toBeGreaterThan(1)
+    expect(await ids()).toEqual(first)
+  })
+
+  it('derives each action span id from its root and ordinal under --trace-zips', async () => {
+    const manifest = stampedManifest(
+      [attemptRecord(0, 'failed', 'c0ffee0123456789')],
+      {
+        artifacts: [
+          {
+            kind: 'trace',
+            path: 'traces/s1-login.zip',
+            testUids: ['uid-login'],
+            retained: true
+          }
+        ]
+      }
+    )
+    const { spans } = await push({
+      manifests: [{ file: MANIFEST_FILE, manifest }]
+    })
+    const click = byName(spans, 'Element.click')
+    expect(click.spanContext().spanId).toBe(
+      derivedSpanId('c0ffee0123456789', '0')
+    )
+    expect(click.parentSpanContext?.spanId).toBe(
+      byName(spans, 'Login').spanContext().spanId
+    )
+    expect(byName(spans, 'Login').parentSpanContext?.spanId).toBe(
+      'c0ffee0123456789'
+    )
+  })
+
+  it('links every root to the parent context from the manifest', async () => {
+    const manifest = stampedManifest(
+      [attemptRecord(0, 'passed', '000000000000aaa1')],
+      {
+        parent: { traceId: TRACE_A, spanId: PARENT_SPAN, traceFlags: 1 }
+      }
+    )
+    const { spans, warnings } = await push({
+      manifests: [{ file: MANIFEST_FILE, manifest }],
+      traceZips: false
+    })
+    const [root] = rootsNamed(spans, 'logs in')
+    expect(root.spanContext().traceId).toBe(TRACE_A)
+    expect(root.spanContext().spanId).toBe('000000000000aaa1')
+    expect(root.parentSpanContext?.spanId).toBe(PARENT_SPAN)
+    expect(warnings).toEqual([])
+  })
+
+  it('keeps the attempt ids and warns when the parent is in another trace', async () => {
+    const manifest = stampedManifest(
+      [attemptRecord(0, 'passed', '000000000000aaa1')],
+      {
+        parent: {
+          traceId: '99999999999999999999999999999999',
+          spanId: PARENT_SPAN,
+          traceFlags: 1
+        }
+      }
+    )
+    const { spans, warnings } = await push({
+      manifests: [{ file: MANIFEST_FILE, manifest }],
+      traceZips: false
+    })
+    const [root] = rootsNamed(spans, 'logs in')
+    expect(root.spanContext().traceId).toBe(TRACE_A)
+    expect(root.parentSpanContext).toBeUndefined()
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain("not the manifest's parent trace")
+  })
+
+  it('falls back to random ids and the test timing for a manifest from before attempts', async () => {
+    const manifest = manifestOf({
+      artifacts: [],
+      tests: [
+        {
+          uid: 'uid-login',
+          title: 'logs in',
+          specFile: 'specs/login.spec.ts',
+          state: 'passed',
+          attempt: 0,
+          startTime: EPOCH_2025 + 500,
+          endTime: EPOCH_2025 + 900,
+          durationMs: 400
+        }
+      ]
+    })
+    const { spans, warnings } = await push({
+      manifests: [{ file: MANIFEST_FILE, manifest }],
+      zips: new Map(),
+      traceZips: false
+    })
+    const [root] = rootsNamed(spans, 'logs in')
+    expect(root.spanContext().spanId).toMatch(/^[0-9a-f]{16}$/)
+    expect(root.spanContext().traceId).toMatch(/^[0-9a-f]{32}$/)
+    expect(toMs(root.startTime)).toBe(EPOCH_2025 + 500)
+    expect(toMs(root.endTime)).toBe(EPOCH_2025 + 900)
+    expect(warnings).toEqual([])
+  })
+})
+
+describe('pushRun opt-in zips', () => {
+  it('never reads a zip without --trace-zips', async () => {
+    const { spans, warnings } = await push({
+      zips: new Map(),
+      traceZips: false
+    })
+    expect(spans.map((span) => span.name)).toEqual(['logs in'])
+    expect(warnings).toEqual([])
+  })
+
+  it('warns and skips the actions of a missing zip under --trace-zips without failing the push', async () => {
+    const { spans, warnings } = await push({
+      zips: new Map(),
+      traceZips: true
+    })
+    expect(spans.map((span) => span.name)).toEqual(['logs in'])
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain(ZIP_PATH)
+    expect(warnings[0]).toContain('could not be read')
+  })
+
+  it('links the artifact URL without reading the zip', async () => {
+    const { spans } = await push({
+      traceZips: false,
+      artifactBaseUrl: 'https://bucket.example/run-1'
+    })
+    expect(byName(spans, 'logs in').attributes[attr.ATTR_ARTIFACT_URL]).toBe(
+      'https://bucket.example/run-1/traces/s1-login.zip'
+    )
+  })
+
+  it('pushes a retained:false manifest and links no zip that was dropped', async () => {
+    const manifest = manifestOf({
+      artifacts: [
+        {
+          kind: 'trace',
+          path: 'traces/s1-login.zip',
+          testUids: ['uid-login'],
+          retained: false
+        }
+      ]
+    })
+    const { spans, warnings } = await push({
+      manifests: [{ file: MANIFEST_FILE, manifest }],
+      traceZips: false,
+      artifactBaseUrl: 'https://bucket.example/run-1'
+    })
+    expect(spans.map((span) => span.name)).toEqual(['logs in'])
+    expect(
+      byName(spans, 'logs in').attributes[attr.ATTR_ARTIFACT_URL]
+    ).toBeUndefined()
+    expect(warnings).toEqual([])
+  })
+})
+
+describe('pushRun final attempt marker', () => {
+  const failThenPass = (): Manifest =>
+    manifestOf({
+      artifacts: [],
+      tests: [
+        {
+          uid: 'uid-login',
+          title: 'logs in',
+          specFile: 'specs/login.spec.ts',
+          state: 'passed',
+          attempt: 1,
+          attempts: [
+            attemptRecord(0, 'failed', '000000000000aaa1'),
+            attemptRecord(1, 'passed', 'bbbbbbbbbbbbbbb2')
+          ]
+        }
+      ]
+    })
+
+  it('marks only the root of the final attempt', async () => {
+    const { spans } = await push({
+      manifests: [{ file: MANIFEST_FILE, manifest: failThenPass() }],
+      traceZips: false
+    })
+    const roots = rootsNamed(spans, 'logs in')
+    expect(
+      roots.map((root) => [
+        root.attributes[attr.ATTR_TEST_ATTEMPT],
+        root.attributes[attr.ATTR_TEST_FINAL_ATTEMPT]
+      ])
+    ).toEqual([
+      [0, false],
+      [1, true]
+    ])
+  })
+
+  it('marks the record the writer stamped final', async () => {
+    const manifest = manifestOf({
+      artifacts: [],
+      tests: [
+        {
+          uid: 'uid-login',
+          title: 'logs in',
+          specFile: 'specs/login.spec.ts',
+          state: 'failed',
+          attempt: 1,
+          attempts: [
+            { ...attemptRecord(0, 'failed', '000000000000aaa1'), final: true },
+            attemptRecord(1, 'failed', 'bbbbbbbbbbbbbbb2')
+          ]
+        }
+      ]
+    })
+    const { spans } = await push({
+      manifests: [{ file: MANIFEST_FILE, manifest }],
+      traceZips: false
+    })
+    const finals = rootsNamed(spans, 'logs in').filter(
+      (root) => root.attributes[attr.ATTR_TEST_FINAL_ATTEMPT] === true
+    )
+    expect(finals).toHaveLength(1)
+    expect(finals[0].spanContext().spanId).toBe('000000000000aaa1')
+  })
+
+  it('takes the highest record as final in a manifest with no stamped record, without a warning', async () => {
+    const manifest = manifestOf({
+      artifacts: [],
+      tests: [
+        {
+          uid: 'uid-login',
+          title: 'logs in',
+          specFile: 'specs/login.spec.ts',
+          state: 'failed',
+          attempt: 2,
+          attempts: [
+            attemptRecord(0, 'failed', '000000000000aaa1'),
+            attemptRecord(1, 'failed', 'bbbbbbbbbbbbbbb2')
+          ]
+        }
+      ]
+    })
+    const { spans, warnings } = await push({
+      manifests: [{ file: MANIFEST_FILE, manifest }],
+      traceZips: false
+    })
+    expect(warnings).toEqual([])
+    const finals = rootsNamed(spans, 'logs in').filter(
+      (root) => root.attributes[attr.ATTR_TEST_FINAL_ATTEMPT] === true
+    )
+    expect(finals).toHaveLength(1)
+    expect(finals[0].spanContext().spanId).toBe('bbbbbbbbbbbbbbb2')
+    expect(finals[0].attributes[attr.ATTR_TEST_CASE_RESULT_STATUS]).toBe(
+      attr.TEST_CASE_RESULT_STATUS_FAIL
+    )
+  })
+})
+
+describe('planPush unreadable zips', () => {
+  const emitAndListUnreadable = async (plan: PushPlan): Promise<string[]> => {
+    await plan.emit({
+      tracer: new TracerProvider().getTracer('test'),
+      ids: new PinnedIdGenerator(),
+      flush: async () => {}
+    })
+    return plan.unreadable()
+  }
+
+  const planOf = (
+    manifest: Manifest,
+    zips: Map<string, Uint8Array>,
+    traceZips = true
+  ) =>
+    planPush({
+      manifests: [{ file: MANIFEST_FILE, manifest, mtimeMs: MTIME_MS }],
+      runId: 'run-1',
+      traceZips,
+      loadZip: (zipPath) => {
+        const zip = zips.get(zipPath)
+        if (!zip) {
+          throw new Error(`no fixture for ${zipPath}`)
+        }
+        return zip
+      },
+      warn: () => {}
+    })
+
+  it('lists a zip requested under --trace-zips that cannot be parsed', async () => {
+    const plan = planOf(
+      manifestOf(),
+      new Map([[ZIP_PATH, new Uint8Array([1, 2, 3])]])
+    )
+    expect(await emitAndListUnreadable(plan)).toEqual([ZIP_PATH])
+  })
+
+  it('lists nothing when every requested zip reads', async () => {
+    const plan = planOf(
+      manifestOf(),
+      new Map([[ZIP_PATH, await zipOf(loginEvents)]])
+    )
+    expect(await emitAndListUnreadable(plan)).toEqual([])
+  })
+
+  it('never reads a dropped zip, so a corrupt one does not count', async () => {
+    const manifest = manifestOf({
+      artifacts: [
+        {
+          kind: 'trace',
+          path: 'traces/s1-login.zip',
+          testUids: ['uid-login'],
+          retained: false
+        }
+      ]
+    })
+    const plan = planOf(manifest, new Map([[ZIP_PATH, new Uint8Array([1])]]))
+    expect(await emitAndListUnreadable(plan)).toEqual([])
   })
 })

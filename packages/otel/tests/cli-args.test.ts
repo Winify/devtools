@@ -11,7 +11,8 @@ describe('parseCliArgs', () => {
         '--artifact-base-url',
         'https://bucket.example/run',
         '--run-id=ci-42',
-        '--dry-run'
+        '--dry-run',
+        '--trace-zips'
       ])
     ).toEqual({
       help: false,
@@ -21,16 +22,24 @@ describe('parseCliArgs', () => {
       ],
       artifactBaseUrl: 'https://bucket.example/run',
       runId: 'ci-42',
-      dryRun: true
+      dryRun: true,
+      traceZips: true
     })
   })
 
-  it('defaults to a real push with no run id or base url', () => {
+  it('defaults to a push of root spans only, with no zips', () => {
     expect(parseCliArgs(['push', 'm.json'])).toEqual({
       help: false,
       manifests: ['m.json'],
-      dryRun: false
+      dryRun: false,
+      traceZips: false
     })
+  })
+
+  it('rejects --logs, since spans are the only signal pushed', () => {
+    expect(() => parseCliArgs(['push', 'm.json', '--logs'])).toThrow(
+      'unknown option "--logs"'
+    )
   })
 
   it('shows help with -h, --help, or no arguments', () => {

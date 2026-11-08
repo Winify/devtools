@@ -16,7 +16,11 @@ const { requireMobileToolchain } = createRequire(import.meta.url)(
   '../../mobile-preflight.cjs'
 )
 
-const MODE = process.env.DEVTOOLS_MODE === 'live' ? 'live' : 'trace'
+const MODE =
+  process.env.DEVTOOLS_MODE === 'live' ||
+  process.env.DEVTOOLS_MODE === 'telemetry'
+    ? process.env.DEVTOOLS_MODE
+    : 'trace'
 
 const __dirname = path.resolve(path.dirname(new URL(import.meta.url).pathname))
 

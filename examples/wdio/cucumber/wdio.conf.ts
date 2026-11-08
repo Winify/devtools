@@ -54,8 +54,10 @@ export const config: WebdriverIO.Config = {
     [
       'devtools',
       {
-        mode: (process.env.DEVTOOLS_MODE === 'trace' ? 'trace' : 'live') as
-          'live' | 'trace',
+        mode: (process.env.DEVTOOLS_MODE === 'trace' ||
+        process.env.DEVTOOLS_MODE === 'telemetry'
+          ? process.env.DEVTOOLS_MODE
+          : 'live') as 'live' | 'trace' | 'telemetry',
         traceGranularity: (process.env.DEVTOOLS_TRACE_GRANULARITY ??
           'session') as 'session' | 'spec' | 'test',
         tracePolicy: (process.env.DEVTOOLS_TRACE_POLICY ?? 'on') as

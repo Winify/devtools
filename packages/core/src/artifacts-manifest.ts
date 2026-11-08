@@ -15,6 +15,7 @@ import path from 'node:path'
 import type {
   ArtifactManifestTest,
   ArtifactsManifest,
+  TestAttemptRecord,
   TestMetadataEntry,
   TestMetadataMap,
   TraceArtifact,
@@ -40,6 +41,19 @@ function isStepEntry(
   )
 }
 
+/** Stamps `final` on the attempt the test ended on, falling back to the last one recorded. */
+function markFinalAttempt(
+  attempts: TestAttemptRecord[],
+  finalAttempt: number | undefined
+): TestAttemptRecord[] {
+  const final =
+    attempts.find((record) => record.attempt === finalAttempt) ??
+    attempts[attempts.length - 1]
+  return attempts.map((record) =>
+    record === final ? { ...record, final: true } : record
+  )
+}
+
 /** Assemble the manifest from the artifacts collected across the run and the
  *  test-metadata map. Pure — the write is separate so it stays unit-testable. */
 export function buildArtifactsManifest(input: {
@@ -47,13 +61,16 @@ export function buildArtifactsManifest(input: {
   format: TraceFormat
   artifacts: readonly TraceArtifact[]
   testMetadata: TestMetadataMap
+  runId?: string
+  parent?: ArtifactsManifest['parent']
+  attemptsFor?: (uid: string) => TestAttemptRecord[]
 }): ArtifactsManifest {
   const tests: ArtifactManifestTest[] = []
   for (const [uid, meta] of input.testMetadata) {
     if (isStepEntry(uid, meta, input.testMetadata)) {
       continue
     }
-    tests.push({
+    const test: ArtifactManifestTest = {
       uid,
       title: meta.title,
       specFile: meta.specFile,
@@ -63,13 +80,20 @@ export function buildArtifactsManifest(input: {
       endTime: meta.endTime,
       durationMs: meta.durationMs,
       error: meta.error
-    })
+    }
+    const attempts = input.attemptsFor?.(uid)
+    if (attempts && attempts.length > 0) {
+      test.attempts = markFinalAttempt(attempts, meta.attempt)
+    }
+    tests.push(test)
   }
   return {
     sessionId: input.sessionId,
     format: input.format,
     artifacts: [...input.artifacts],
-    tests
+    tests,
+    runId: input.runId,
+    parent: input.parent
   }
 }
 
