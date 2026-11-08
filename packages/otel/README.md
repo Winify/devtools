@@ -22,7 +22,7 @@ Every manifest you pass is pushed as one run. Use `--run-id` to name the run in 
 
 Record with `mode: 'telemetry'` when you want only the telemetry. It runs no backend, opens no window and captures no per-action state. It writes the artifacts manifest and no zips, which is all `devtools-otel` needs without `--trace-zips`.
 
-Use `mode: 'trace'` with `traceGranularity: 'test'` when you also want the actions as child spans. Each test then gets its own zip, and `--trace-zips` reads it. With session or spec granularity the zips are shared, so those tests get their root span but no action spans (with a warning). `tracePolicy: 'on'` keeps every zip. Under a retain policy the zips of passing tests are dropped; the push still covers those tests, and the dropped zips are simply not linked or read.
+Use `mode: 'trace'` with `traceGranularity: 'test'` when you also want the actions as child spans. Each test then gets its own zip, and `--trace-zips` reads it. With session or spec granularity the zips are shared, so those tests get their root span but no action spans (with a warning). `tracePolicy: 'on'` keeps every zip. In trace mode the manifest is written only with `emitArtifactsManifest: true`; WebdriverIO also writes it when `@wdio/allure-reporter` is configured and Selenium when an allure-js-commons runtime is active, Nightwatch only with the option. Under a retain policy the zips of passing tests are dropped; the push still covers those tests, and the dropped zips are simply not linked or read.
 
 ## Configuration
 
@@ -84,7 +84,7 @@ These become filterable resource attributes on every span. Give each project its
 | `devtools.test.final_attempt` | root span | `true` on the root of the test's final attempt, `false` on each earlier attempt's root. Filter on it to count a test once |
 | `devtools.duration_ms` | root span | The framework-reported duration when the manifest has one; else the test's `endTime` minus `startTime`; else first action or group start to last action or group end under `--trace-zips` (absent without any of these) |
 | `devtools.time_source` | root span | Where the root's timing came from: `manifest` (the manifest's `endTime`), `trace` (the zip's first action, with `--trace-zips`), or `manifest-file` (the manifest file's mtime, when neither exists). A final root span carries this value; an earlier attempt's root is always `manifest`, since its timing comes from the manifest |
-| `error.message` | root span | For a failed final attempt: the manifest's failure message when present, else the first failing action's error (with `--trace-zips`). Never set on an earlier attempt, and never from a passing test's caught or retried command. Capped at 4096 characters |
+| `error.message` | root span | For a failed final attempt: the manifest's failure message when present, else the first failing action's error (with `--trace-zips`). Never set on an earlier attempt, and never from a passing test's caught or retried command. A longer message is truncated to 4096 characters followed by `…`; the same applies to a failing action span's status and exception message |
 | `devtools.failed_action` | root span | For a failed test: key of the first failing action in the final attempt's zip. Needs `--trace-zips`; absent on a passing test |
 | `devtools.run.id` | root span | Run identity |
 | `devtools.artifact.url` | root span | URL of the final attempt's trace zip, when `--artifact-base-url` is set and the zip was not dropped by a retain policy |
@@ -104,7 +104,7 @@ With `--trace-zips`, the root span also carries these span events, each kind cap
 | `console` (`warn` and `error` lines) | `devtools.console.type`, `devtools.console.message` |
 | `http.request.failed` (status 0 or 400+) | `url.path` (the pathname only, no origin, query or fragment), `http.request.method`, `devtools.network.status` |
 
-Cucumber step entries in the manifest (entries without a `state`) are not tests: they get no span of their own, and a scenario zip that also lists its step uids counts as that one scenario's zip.
+Cucumber steps are not tests: the manifest lists only scenarios, so a step gets no span of its own, and a scenario zip that also lists its step uids counts as that one scenario's zip. A Cucumber manifest written by an earlier Selenium or Nightwatch adapter is rejected: its scenario entries carry no attempt and its steps are listed as tests. Re-record it with the current adapter.
 
 ## Timestamps
 
