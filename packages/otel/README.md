@@ -38,7 +38,7 @@ The run mints each attempt's trace and span ids when the attempt starts, and wri
 
 If the process that starts the run has a `TRACEPARENT` environment variable (the W3C trace context header a CI job can set), the run reads it once, and each attempt joins that trace: every root span is a child of the CI parent span, and the manifest records the parent under `parent`. Retried tests therefore show every attempt under the same CI trace. A `TRACESTATE` variable is carried along when set. An invalid `TRACEPARENT` is logged and ignored.
 
-When the manifest's parent trace differs from an attempt's own trace, the CLI warns and keeps the attempt's ids, leaving that root unparented. The CLI records every span it is given regardless of the sampled flag in `TRACEPARENT`.
+The CLI records every span it is given regardless of the sampled flag in `TRACEPARENT`.
 
 ## Sending to a hosted platform and separating projects
 

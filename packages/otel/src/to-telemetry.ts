@@ -33,7 +33,6 @@ import {
   type PreparedTest,
   type TraceEvidence
 } from './prepared.js'
-import type { PinnedSpanIds } from './span-ids.js'
 
 type ManifestParent = NonNullable<Manifest['parent']>
 
@@ -279,20 +278,9 @@ function attemptViews(test: ManifestTest): AttemptView[] {
   })
 }
 
-/** The attempt's ids win over a parent that disagrees, since the children and the stamped ids were minted together. */
-function parentContextOf(
-  parent: ManifestParent | undefined,
-  ids: PinnedSpanIds | undefined,
-  label: string,
-  warn: (message: string) => void
-): Context {
+// The writer mints every attempt's trace id from the same parent it records, so the two always agree.
+function parentContextOf(parent: ManifestParent | undefined): Context {
   if (!parent) {
-    return ROOT_CONTEXT
-  }
-  if (ids?.traceId !== undefined && ids.traceId !== parent.traceId) {
-    warn(
-      `${label} is in trace ${ids.traceId}, not the manifest's parent trace ${parent.traceId}, so it keeps its own ids and is not linked to the parent`
-    )
     return ROOT_CONTEXT
   }
   return trace.setSpanContext(ROOT_CONTEXT, {
@@ -308,7 +296,6 @@ function parentContextOf(
 
 function prepareRoot(view: AttemptView, facts: PreparedFacts): PreparedRoot {
   const { test, run, span, evidence, finalExtra, errorMessage } = facts
-  const label = `${test.uid} attempt ${view.attempt}`
   const attributes = testAttributes(test, run.runId, view.state, view.attempt, {
     ...timingAttributes(test, view, span),
     ...(view.final ? finalExtra : {})
@@ -319,7 +306,7 @@ function prepareRoot(view: AttemptView, facts: PreparedFacts): PreparedRoot {
     state: view.state,
     errorMessage: view.final ? errorMessage : undefined,
     ids: view.ids,
-    context: parentContextOf(run.parent, view.ids, label, run.warn),
+    context: parentContextOf(run.parent),
     final: view.final,
     trace: view.final ? evidence : undefined
   }
