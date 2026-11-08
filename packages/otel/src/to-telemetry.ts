@@ -99,7 +99,7 @@ function actionInfos(commands: CommandLog[]): ActionInfo[] {
       command,
       key: actionKey(command),
       ordinal,
-      failure: effectiveFailure(command, retried)
+      failure: cappedFailure(effectiveFailure(command, retried))
     }
   })
   return infos
@@ -107,10 +107,16 @@ function actionInfos(commands: CommandLog[]): ActionInfo[] {
 
 const MAX_ERROR_MESSAGE_LENGTH = 4096
 
-function capLength(message: string | undefined): string | undefined {
-  return message && message.length > MAX_ERROR_MESSAGE_LENGTH
+function capLength(message: string): string {
+  return message.length > MAX_ERROR_MESSAGE_LENGTH
     ? `${message.slice(0, MAX_ERROR_MESSAGE_LENGTH)}…`
     : message
+}
+
+function cappedFailure(
+  failure: { message: string } | undefined
+): { message: string } | undefined {
+  return failure && { message: capLength(failure.message) }
 }
 
 function status(state: string): string {
@@ -344,7 +350,8 @@ function prepareTest(
       }
     : undefined
   const span = evidence?.span
-  const errorMessage = capLength(test.error ?? failure?.failure?.message)
+  const errorMessage =
+    test.error === undefined ? failure?.failure?.message : capLength(test.error)
   const durationMs = durationOf(test, span)
   const finalAttributes = testAttributes(
     test,
