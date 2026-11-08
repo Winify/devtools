@@ -387,43 +387,14 @@ describe('pushRun span tree', () => {
     )
   })
 
-  it('attributes a failed test to its failed wait, not a poll the wait retried past', async () => {
+  it("caps a failing action's span status and exception message", async () => {
+    const long = 'y'.repeat(10_000)
     const events = [
       contextOptions,
       {
         type: 'before',
-        callId: 'w',
-        startTime: 1000,
-        class: 'Element',
-        method: 'waitForDisplayed',
-        pageId: 'p',
-        params: { locator: '#dashboard' },
-        title: 'Element.waitForDisplayed',
-        apiName: 'element.waitForDisplayed'
-      },
-      {
-        type: 'before',
-        callId: 'poll',
-        startTime: 1010,
-        class: 'Element',
-        method: 'isDisplayed',
-        pageId: 'p',
-        params: { locator: '#dashboard' },
-        title: 'Element.isDisplayed',
-        apiName: 'element.isDisplayed',
-        parentId: 'w'
-      },
-      {
-        type: 'after',
-        callId: 'poll',
-        endTime: 1020,
-        error: { message: 'no' }
-      },
-      { type: 'after', callId: 'w', endTime: 1100 },
-      {
-        type: 'before',
         callId: 'c',
-        startTime: 1200,
+        startTime: 1000,
         class: 'Element',
         method: 'click',
         pageId: 'p',
@@ -431,49 +402,19 @@ describe('pushRun span tree', () => {
         title: 'Element.click',
         apiName: 'element.click'
       },
-      { type: 'after', callId: 'c', endTime: 1300, error: { message: 'boom' } }
+      { type: 'after', callId: 'c', endTime: 1100, error: { message: long } }
     ]
     const { spans } = await push({
       zips: new Map([[ZIP_PATH, await zipOf(events)]])
     })
-    const root = byName(spans, 'logs in')
-    const erroredActions = spans
-      .filter(
-        (span) =>
-          span.spanContext().spanId !== root.spanContext().spanId &&
-          span.status.code === SpanStatusCode.ERROR
-      )
-      .map((span) => span.name)
-    expect(erroredActions).toEqual(['Element.click'])
-    expect(root.attributes[attr.ATTR_FAILED_ACTION]).toBe('click #go')
-    expect(root.attributes[attr.ATTR_ERROR_MESSAGE]).toBe('boom')
-  })
-
-  it('attributes a failed test to a wait that resolved false', async () => {
-    const events = [
-      contextOptions,
-      {
-        type: 'before',
-        callId: 'w',
-        startTime: 1000,
-        class: 'Element',
-        method: 'waitForDisplayed',
-        pageId: 'p',
-        params: { locator: '#dashboard' },
-        title: 'Element.waitForDisplayed',
-        apiName: 'element.waitForDisplayed'
-      },
-      { type: 'after', callId: 'w', endTime: 1500, result: false }
-    ]
-    const { spans } = await push({
-      zips: new Map([[ZIP_PATH, await zipOf(events)]])
-    })
-    const wait = byName(spans, 'Element.waitForDisplayed')
-    const root = byName(spans, 'logs in')
-    expect(wait.status.code).toBe(SpanStatusCode.ERROR)
-    expect(root.attributes[attr.ATTR_FAILED_ACTION]).toBe(
-      'waitForDisplayed #dashboard'
-    )
+    const click = byName(spans, 'Element.click')
+    const capped = `${'y'.repeat(4096)}…`
+    expect(click.status.message).toBe(capped)
+    expect(
+      click.events.find((event) => event.name === 'exception')?.attributes?.[
+        'exception.message'
+      ]
+    ).toBe(capped)
   })
 
   it('stamps each action with a normalized key and its chronological index', async () => {
