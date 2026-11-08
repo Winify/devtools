@@ -642,7 +642,49 @@ describe('pushRun root spans', () => {
       true
     )
     expect(warnings).toHaveLength(1)
-    expect(warnings[0]).toContain("traceGranularity:'test' is required")
+    expect(warnings[0]).toContain("record with traceGranularity:'test'")
+  })
+
+  it('links a shared zip without reading it, with or without --trace-zips', async () => {
+    const shared = manifestOf({
+      artifacts: [
+        {
+          kind: 'trace',
+          path: 'traces/session.zip',
+          testUids: ['uid-login', 'uid-other'],
+          retained: true
+        }
+      ],
+      tests: [
+        {
+          uid: 'uid-login',
+          title: 'logs in',
+          specFile: 'specs/login.spec.ts',
+          state: 'passed',
+          attempt: 0
+        },
+        {
+          uid: 'uid-other',
+          title: 'other',
+          specFile: 'specs/login.spec.ts',
+          state: 'passed',
+          attempt: 0
+        }
+      ]
+    })
+    for (const traceZips of [false, true]) {
+      const { spans } = await push({
+        manifests: [{ file: MANIFEST_FILE, manifest: shared }],
+        artifactBaseUrl: 'https://bucket.example/run-1',
+        traceZips
+      })
+      expect(
+        spans.map((span) => span.attributes[attr.ATTR_ARTIFACT_URL])
+      ).toEqual([
+        'https://bucket.example/run-1/traces/session.zip',
+        'https://bucket.example/run-1/traces/session.zip'
+      ])
+    }
   })
 
   it('groups tests from several manifests under the one run id', async () => {
