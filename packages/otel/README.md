@@ -90,10 +90,19 @@ These become filterable resource attributes on every span. Give each project its
 | `devtools.artifact.url` | root span | URL of the final attempt's trace zip, when `--artifact-base-url` is set and the zip was not dropped by a retain policy |
 | `devtools.action.key` | action span | Method plus its normalized selector; stable across runs, so passing and failing runs line up |
 | `devtools.action.index` | action span | Ordinal of the action within the test |
+| `devtools.action.method` | action span | The command the action ran |
+| `devtools.action.selector` | action span | The selector the action ran on, normalized, when it has one |
 
 Each attempt is one root span named after the test. A retried test therefore has one root per attempt, and each root's status is its own attempt's state. The trace id and span id of every root come from the manifest, as described under Stamped ids and TRACEPARENT.
 
-With `--trace-zips`, error action spans carry status `ERROR` and an exception event. Console `warn`/`error` lines are span events on the root span, with `messageType`. Failed requests (status 0 or 400+) are span events with only the URL pathname (no origin, query or fragment). Each is capped at 100 per test.
+With `--trace-zips`, a failed action's span carries status `ERROR` and an exception event. A failure is decided by the same rule the rest of devtools uses: a poll that a passing wait retried past is not an error, and a wait that resolves `false` is one. A wait's polls are child spans of the wait's span.
+
+With `--trace-zips`, the root span also carries these span events, each kind capped at 100 per test:
+
+| Event | Attributes |
+|---|---|
+| `console` (`warn` and `error` lines) | `devtools.console.type`, `devtools.console.message` |
+| `http.request.failed` (status 0 or 400+) | `url.path` (the pathname only, no origin, query or fragment), `http.request.method`, `devtools.network.status` |
 
 Cucumber step entries in the manifest (entries without a `state`) are not tests: they get no span of their own, and a scenario zip that also lists its step uids counts as that one scenario's zip.
 
