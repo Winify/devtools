@@ -73,3 +73,20 @@ export function parseTraceparent(
     traceFlags: parseInt(flags!, 16)
   }
 }
+
+// Web Crypto, so this module stays usable in the browser. An all-zero id, the one invalid draw, has odds of 2^-64 or less.
+function randomHex(bytes: number): string {
+  const buffer = new Uint8Array(bytes)
+  globalThis.crypto.getRandomValues(buffer)
+  return Array.from(buffer, (byte) => byte.toString(16).padStart(2, '0')).join(
+    ''
+  )
+}
+
+export function randomTraceId(): string {
+  return randomHex(TRACE_ID_BYTES)
+}
+
+export function randomSpanId(): string {
+  return randomHex(SPAN_ID_BYTES)
+}

@@ -1,23 +1,15 @@
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import type { IdGenerator } from '@opentelemetry/sdk-trace'
 import {
   isSpanId,
-  isTraceId,
-  SPAN_ID_BYTES,
-  TRACE_ID_BYTES
+  randomSpanId,
+  randomTraceId,
+  SPAN_ID_BYTES
 } from '@wdio/devtools-shared'
 
 export interface PinnedSpanIds {
   traceId?: string
   spanId: string
-}
-
-function randomId(bytes: number, isValid: (hex: string) => boolean): string {
-  let hex: string
-  do {
-    hex = randomBytes(bytes).toString('hex')
-  } while (!isValid(hex))
-  return hex
 }
 
 /** Held until the caller clears it, since the SDK asks for a span id before it knows the parent. */
@@ -29,11 +21,11 @@ export class PinnedIdGenerator implements IdGenerator {
   }
 
   generateTraceId(): string {
-    return this.#pinned?.traceId ?? randomId(TRACE_ID_BYTES, isTraceId)
+    return this.#pinned?.traceId ?? randomTraceId()
   }
 
   generateSpanId(): string {
-    return this.#pinned?.spanId ?? randomId(SPAN_ID_BYTES, isSpanId)
+    return this.#pinned?.spanId ?? randomSpanId()
   }
 }
 
