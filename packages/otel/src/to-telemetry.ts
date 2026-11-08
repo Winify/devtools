@@ -327,11 +327,15 @@ function prepareTest(
   const { data, artifactUrl } = source
   const actions = data ? actionInfos(data.trace.commands) : []
   const failure = failedActionOf(test, actions)
-  const span = data
-    ? bounds(actions, data.groups ?? [], data.startTime)
+  const evidence: TraceEvidence | undefined = data
+    ? {
+        data,
+        actions,
+        failure,
+        span: bounds(actions, data.groups ?? [], data.startTime)
+      }
     : undefined
-  const evidence: TraceEvidence | undefined =
-    data && span ? { data, actions, failure, span } : undefined
+  const span = evidence?.span
   const errorMessage = test.error ?? failure?.failure?.message
   const durationMs = durationOf(test, span)
   const finalAttributes = testAttributes(
