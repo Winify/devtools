@@ -230,11 +230,15 @@ function timingAttributes(
     : view.durationMs
   const durationMs =
     manifestMs ?? (view.final && span ? span.endMs - span.startMs : undefined)
-  const timeSource = view.timing
-    ? attr.TIME_SOURCE_MANIFEST
-    : view.final && span
-      ? attr.TIME_SOURCE_TRACE
-      : attr.TIME_SOURCE_MANIFEST_FILE
+  // Names where the duration came from: a manifest start with no end takes its end from the trace when there is one.
+  const timeSource =
+    manifestMs !== undefined
+      ? attr.TIME_SOURCE_MANIFEST
+      : view.final && span
+        ? attr.TIME_SOURCE_TRACE
+        : view.timing
+          ? attr.TIME_SOURCE_MANIFEST
+          : attr.TIME_SOURCE_MANIFEST_FILE
   return {
     ...(durationMs !== undefined
       ? { [attr.ATTR_DURATION_MS]: durationMs }
