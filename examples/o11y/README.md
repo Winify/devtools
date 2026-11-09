@@ -29,7 +29,7 @@ services: [['devtools', {
 }]]
 ```
 
-`emitArtifactsManifest: true` is what makes the service write the artifacts manifest, `devtools-artifacts-<sessionId>.json`, in trace mode; without it only an Allure reporter in the config turns it on. The manifest and the trace zips land in `test-results/` under WDIO's `outputDir`, or under its `rootDir` (the config file's directory) when `outputDir` is unset. `devtools-otel push` reads these manifests, so run the commands below from that directory. `mode: 'telemetry'` writes the manifest with no zips, which is enough for the root spans; add `--trace-zips` only when you have zips to read.
+`emitArtifactsManifest: true` is what makes the service write the artifacts manifest, `devtools-artifacts-<sessionId>.json`, in trace mode; without it only an Allure reporter in the config turns it on. The manifest and the trace zips land in `test-results/` under WDIO's `outputDir`, or under its `rootDir` (the config file's directory) when `outputDir` is unset. `devtools-otel push` reads these manifests, so run the commands below from that directory. `mode: 'telemetry'` writes the manifest with no zips, which is enough for the root spans but not for the failed action (see Top 10 failing actions below); add `--trace-zips` only when you have zips to read.
 
 ## Retain policies
 
@@ -152,7 +152,7 @@ p95 framework-reported duration per test, from final attempts (Tempo estimates i
 { resource.service.name="devtools-tests" && span.test.case.result.status != nil && span.devtools.test.final_attempt = true } | quantile_over_time(span.devtools.duration_ms, .95) by (span.test.case.name)
 ```
 
-Top 10 failing actions, from final attempts:
+Top 10 failing actions, from final attempts. `devtools.failed_action` is read from the test's own trace zip, so it, this query, the Top failing actions panel and the failed-action column of the Test results table are filled only for runs recorded in trace mode with `traceGranularity: 'test'` and pushed with `--trace-zips`; a `mode: 'telemetry'` run writes no zips and leaves them empty:
 
 ```traceql
 { resource.service.name="devtools-tests" && span.test.case.result.status = "fail" && span.devtools.test.final_attempt = true && span.devtools.failed_action != nil } | count_over_time() by (span.devtools.failed_action) | topk(10)
