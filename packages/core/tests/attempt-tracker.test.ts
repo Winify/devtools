@@ -173,8 +173,12 @@ describe('TestAttemptTracker', () => {
       expect(first!.spanId).toMatch(HEX_16)
     })
 
-    it('gives each attempt its own span, and its own trace when no parent is set', () => {
-      const t = new TestAttemptTracker()
+    it('gives each attempt its own span, and its own trace when no parent is set', async () => {
+      vi.stubEnv('TRACEPARENT', '')
+      vi.resetModules()
+      const { TestAttemptTracker: Tracker } =
+        await import('../src/attempt-tracker.js')
+      const t = new Tracker()
       t.recordStart('a')
       t.recordStart('a')
       const [first, second] = t.attemptsFor('a')
