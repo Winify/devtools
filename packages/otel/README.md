@@ -97,7 +97,7 @@ Each attempt is one root span named after the test. A retried test therefore has
 
 With `--trace-zips`, a failed action's span carries status `ERROR` and an exception event. A failure is decided by the same rule the rest of devtools uses: a poll that a passing wait retried past is not an error, and a wait that resolves `false` is one. A wait's polls are child spans of the wait's span.
 
-With `--trace-zips`, the root span also carries these span events, each kind capped at 100 per test:
+With `--trace-zips`, the root span also carries these span events, each kind capped at the first 100 per test:
 
 | Event | Attributes |
 |---|---|

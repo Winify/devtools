@@ -24,6 +24,10 @@ const EXPORT_SUCCESS_CODE = 0
 // A push emits the whole run synchronously and flushes once, so a bounded queue (2048 by default) silently drops the overflow.
 const BATCH_LIMITS = { maxQueueSize: Number.MAX_SAFE_INTEGER }
 
+// Events are capped per kind before they are added; the SDK's own limit of 128 per span would drop the oldest of a
+// root's up to 200, so a test's first console errors vanished behind its failed requests.
+export const SPAN_LIMITS = { eventCountLimit: Number.POSITIVE_INFINITY }
+
 export function batchedProcessors(
   spanExporter: SpanExporter
 ): BatchSpanProcessor {
@@ -68,6 +72,7 @@ export function telemetryWith(
   const tracerProvider = new TracerProvider({
     resource,
     sampler: new AlwaysOnSampler(),
+    spanLimits: SPAN_LIMITS,
     idGenerator: ids,
     spanProcessors: [spanProcessor]
   })

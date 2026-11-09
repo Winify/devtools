@@ -30,7 +30,7 @@ import {
 
 const REPORTED_CONSOLE_LEVELS: ReadonlySet<string> = new Set(['warn', 'error'])
 
-const MAX_EVENTS_PER_TEST = 100
+export const MAX_EVENTS_PER_TEST = 100
 export interface TelemetrySink {
   tracer: Tracer
   ids: PinnedIdGenerator
