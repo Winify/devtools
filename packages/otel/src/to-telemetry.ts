@@ -257,10 +257,8 @@ function attemptViews(test: ManifestTest): AttemptView[] {
     ]
   }
   const records = [...test.attempts].sort((a, b) => a.attempt - b.attempt)
-  const stamped = records.some((record) => record.final)
-  return records.map((record, index) => {
-    // Manifests from before `final` was stamped have no marked record; their last attempt is the final one.
-    const final = record.final ?? (!stamped && index === records.length - 1)
+  return records.map((record) => {
+    const final = record.final === true
     return {
       attempt: record.attempt,
       state: final ? test.state : record.state,

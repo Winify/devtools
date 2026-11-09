@@ -99,10 +99,17 @@ function isTest(value: unknown): value is ManifestTest {
     isAbsentOr(value.endTime, isNumber) &&
     isAbsentOr(value.durationMs, isNumber) &&
     isAbsentOr(value.error, isString) &&
-    isAbsentOr(
-      value.attempts,
-      (field) => Array.isArray(field) && field.every(isAttempt)
-    )
+    isAbsentOr(value.attempts, isAttemptList)
+  )
+}
+
+// The writer stamps `final` on exactly one record whenever it writes any, so a list without one is hand-made or corrupt.
+function isAttemptList(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.every(isAttempt) &&
+    (value.length === 0 ||
+      value.filter((record: TestAttemptRecord) => record.final).length === 1)
   )
 }
 

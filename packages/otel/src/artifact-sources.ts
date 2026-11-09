@@ -17,17 +17,7 @@ function retryOf(artifact: ManifestArtifact): number {
 
 /** The attempt the test's trace root is linked under: its final record's, or `test.attempt` when the manifest has no `attempts`. */
 function finalAttemptOf(test: ManifestTest): number {
-  const records = test.attempts ?? []
-  if (records.length === 0) {
-    return test.attempt
-  }
-  const final = records.find((record) => record.final)
-  return (
-    final ??
-    records.reduce((latest, record) =>
-      record.attempt > latest.attempt ? record : latest
-    )
-  ).attempt
+  return test.attempts?.find((record) => record.final)?.attempt ?? test.attempt
 }
 
 /** The zip of the test's final attempt; an earlier attempt's zip never stands in for it. */

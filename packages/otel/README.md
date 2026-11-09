@@ -114,7 +114,7 @@ Only the WDIO service writes per-test timing (`endTime`, `durationMs`) into the 
 
 ## Attempts
 
-Each attempt is pushed as its own root span. The final attempt's trace zip is the only zip read: it supplies the child spans, the failed action and the first-action timestamp. A passing retry therefore never carries the failing first attempt's error or zip. A manifest with no artifact keys falls back to the zip whose path has the highest `-retry<n>` suffix. An earlier attempt's zip never stands in for a final attempt that has none. The attempt record the writer stamped `final` is the final one; a manifest with no stamped record takes its highest-numbered record. Two tests with the same full title in the same file share one test id, so the second is read as a retry and the first is stamped failed; this is a known limitation.
+Each attempt is pushed as its own root span. The final attempt's trace zip is the only zip read: it supplies the child spans, the failed action and the first-action timestamp. A passing retry therefore never carries the failing first attempt's error or zip. A manifest with no artifact keys falls back to the zip whose path has the highest `-retry<n>` suffix. An earlier attempt's zip never stands in for a final attempt that has none. The attempt record the writer stamped `final` is the final one; a manifest whose attempts do not have exactly one such record is rejected. Two tests with the same full title in the same file share one test id, so the second is read as a retry and the first is stamped failed; this is a known limitation.
 
 ## Retain policies
 
