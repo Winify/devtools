@@ -80,4 +80,51 @@ describe('traceArtifactsByUid', () => {
     )
     expect(linkedPath(manifest)).toBe('traces/login-retry1.zip')
   })
+
+  it('never links an artifact of another kind with the same uid and key', () => {
+    const manifest = manifestOf(
+      [
+        { ...traceZip('screens/login.png', UID), kind: 'screenshot' },
+        traceZip('traces/login.zip', UID)
+      ],
+      { attempt: 0 }
+    )
+    expect(linkedPath(manifest)).toBe('traces/login.zip')
+  })
+
+  it('links the keyless zip from the highest -retryN directory', () => {
+    const manifest = manifestOf(
+      [
+        traceZip('run/session-retry2/trace.zip'),
+        traceZip('run/session/trace.zip'),
+        traceZip('run/session-retry10/trace.zip'),
+        traceZip('run/session-retry1/trace.zip')
+      ],
+      { attempt: 0 }
+    )
+    expect(linkedPath(manifest)).toBe('run/session-retry10/trace.zip')
+  })
+
+  it('reads the retry from the directory, not the file name', () => {
+    const manifest = manifestOf(
+      [
+        traceZip('run/session-retry1/trace.zip'),
+        traceZip('run/session/trace-retry3.zip')
+      ],
+      { attempt: 0 }
+    )
+    expect(linkedPath(manifest)).toBe('run/session-retry1/trace.zip')
+  })
+
+  // A key names its attempt exactly, so it wins over a retry guessed from a directory name.
+  it('ignores keyless zips once any candidate carries a key', () => {
+    const manifest = manifestOf(
+      [
+        traceZip('run/session-retry5/trace.zip'),
+        traceZip('traces/login.zip', UID)
+      ],
+      { attempt: 0 }
+    )
+    expect(linkedPath(manifest)).toBe('traces/login.zip')
+  })
 })
