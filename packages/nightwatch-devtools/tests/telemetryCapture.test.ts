@@ -75,7 +75,7 @@ describe('telemetry mode reads nothing from the browser on the capture paths', (
 })
 
 describe('telemetry session bringup', () => {
-  it('registers no preload, attaches no BiDi and reads no viewport', async () => {
+  it('registers no preload, attaches no BiDi, reads no viewport and patches no console or stdout', async () => {
     const browser = sessionBrowser('session-1')
     const ctx = {
       hostname: 'localhost',
@@ -103,8 +103,11 @@ describe('telemetry session bringup', () => {
       finalizeCurrentScreencast: vi.fn(async () => {})
     } as unknown as SessionInitCtx
 
+    const write = process.stdout.write
+    const log = console.log
     await ensureSessionInitialized(ctx, browser as unknown as NightwatchBrowser)
 
+    expect([process.stdout.write, console.log]).toEqual([write, log])
     expect(registerCollectorPreload).not.toHaveBeenCalled()
     expect(attachBidiHandlers).not.toHaveBeenCalled()
     expect(browser.execute).not.toHaveBeenCalled()

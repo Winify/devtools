@@ -216,6 +216,23 @@ describe('telemetry mode: no page injection, preload or BiDi attach', () => {
   }
 
   it.each([
+    ['telemetry', false],
+    ['trace', true]
+  ] as const)(
+    '%s: driver bringup patches stdout: %s',
+    async (mode, patched) => {
+      vi.spyOn(NativeNetworkCapture.prototype, 'start').mockResolvedValue()
+      const write = process.stdout.write
+      const ctx = makeLifecycleCtx(mode)
+
+      await onDriverCreated(ctx, { id: 'd' } as unknown as SeleniumDriverLike)
+
+      expect(process.stdout.write !== write).toBe(patched)
+      ctx.sessionCapturer?.cleanup()
+    }
+  )
+
+  it.each([
     ['telemetry', 0],
     ['trace', 1]
   ] as const)(
