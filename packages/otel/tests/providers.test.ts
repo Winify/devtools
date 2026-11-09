@@ -61,3 +61,18 @@ describe('telemetry wiring', () => {
     await expect(telemetry.flush()).rejects.toThrow('refused')
   })
 })
+
+describe('span limits', () => {
+  it('keeps every event the push adds, past the SDK default of 128', async () => {
+    const spans = new InMemorySpanExporter()
+    const telemetry = telemetryWith(batchedProcessors(spans), [])
+    const span = telemetry.tracer.startSpan('root')
+    for (let i = 0; i < 200; i++) {
+      span.addEvent(`e${i}`)
+    }
+    span.end()
+    await telemetry.flush()
+    const events = spans.getFinishedSpans()[0].events
+    expect([events.length, events[0].name]).toEqual([200, 'e0'])
+  })
+})

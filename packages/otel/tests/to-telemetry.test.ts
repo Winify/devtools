@@ -12,6 +12,8 @@ import { describe, expect, it } from 'vitest'
 import * as attr from '../src/attributes.js'
 import type { Manifest } from '../src/manifest.js'
 import { derivedSpanId, PinnedIdGenerator } from '../src/span-ids.js'
+import { SPAN_LIMITS } from '../src/providers.js'
+import { MAX_EVENTS_PER_TEST } from '../src/emit-spans.js'
 import { planPush, type PushPlan } from '../src/to-telemetry.js'
 
 const EPOCH_2025 = Date.UTC(2025, 0, 1, 10, 0, 0)
@@ -150,6 +152,7 @@ async function push(options: PushOptions = {}) {
   const ids = new PinnedIdGenerator()
   const tracerProvider = new TracerProvider({
     idGenerator: ids,
+    spanLimits: SPAN_LIMITS,
     spanProcessors: [new SimpleSpanProcessor({ exporter: spanExporter })]
   })
   const zips = options.zips ?? new Map([[ZIP_PATH, await zipOf(loginEvents)]])
@@ -216,9 +219,15 @@ describe('pushRun span tree', () => {
     expect(toMs(click.endTime)).toBe(EPOCH_2025 + 1200)
   })
 
-  it('bounds every child span within the root span', async () => {
-    const { spans } = await push()
+  it('widens a root whose manifest timing is narrower than its actions', async () => {
+    const manifest = manifestOf()
+    manifest.tests[0].startTime = EPOCH_2025 + 1100
+    manifest.tests[0].endTime = EPOCH_2025 + 1200
+    const { spans } = await push({
+      manifests: [{ file: MANIFEST_FILE, manifest }]
+    })
     const root = byName(spans, 'logs in')
+    expect(toMs(root.startTime)).toBeLessThan(EPOCH_2025 + 1100)
     const children = spans.filter(
       (span) => span.spanContext().spanId !== root.spanContext().spanId
     )
@@ -440,14 +449,18 @@ describe('pushRun span tree', () => {
     }))
     const zip = await zipOf(
       [...loginEvents, ...consoleEvents],
-      [HAR_500, HAR_200]
+      [...Array.from({ length: 150 }, () => HAR_500), HAR_200]
     )
     const { spans } = await push({ zips: new Map([[ZIP_PATH, zip]]) })
     const root = byName(spans, 'logs in')
-    const consoleCount = root.events.filter(
-      (event) => event.name === attr.EVENT_CONSOLE
-    ).length
-    expect(consoleCount).toBe(100)
+    const consoleMessages = root.events
+      .filter((event) => event.name === attr.EVENT_CONSOLE)
+      .map((event) => event.attributes?.[attr.ATTR_CONSOLE_MESSAGE])
+    expect(consoleMessages).toHaveLength(MAX_EVENTS_PER_TEST)
+    expect([consoleMessages[0], consoleMessages.at(-1)]).toEqual([
+      'boom 0',
+      `boom ${MAX_EVENTS_PER_TEST - 1}`
+    ])
     const firstConsole = root.events.find(
       (event) => event.name === attr.EVENT_CONSOLE
     )
@@ -458,7 +471,7 @@ describe('pushRun span tree', () => {
     const failed = root.events.filter(
       (event) => event.name === attr.EVENT_REQUEST_FAILED
     )
-    expect(failed).toHaveLength(1)
+    expect(failed).toHaveLength(MAX_EVENTS_PER_TEST)
     expect(failed[0].attributes?.[attr.ATTR_URL_PATH]).toBe('/api/items')
   })
 })
