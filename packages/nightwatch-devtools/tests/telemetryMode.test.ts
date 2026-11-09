@@ -10,7 +10,8 @@ vi.mock('@wdio/devtools-core', async (importOriginal) => ({
 vi.mock('@wdio/devtools-backend', () => ({ start: vi.fn(), stop: vi.fn() }))
 
 describe('telemetry mode finalize', () => {
-  it('reaches the trace finalizer so the manifest is written', async () => {
+  // The finalizer forces the manifest on the mode it is handed (core forcesManifest), so the mode must arrive as telemetry.
+  it('hands the trace finalizer a telemetry context, which is what forces the manifest', async () => {
     const plugin = new NightwatchDevToolsPlugin({ mode: 'telemetry' })
     Object.assign(plugin, {
       suiteManager: { getAllSuites: () => new Map() },
@@ -23,5 +24,8 @@ describe('telemetry mode finalize', () => {
     })
     await plugin.after()
     expect(finalizeTraceExport).toHaveBeenCalledTimes(1)
+    expect(finalizeTraceExport).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'telemetry' })
+    )
   })
 })
