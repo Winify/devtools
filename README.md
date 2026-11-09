@@ -254,7 +254,7 @@ What counts as a user-facing action is filtered through the `ACTION_MAP` allow-l
 
 **Assertion targets.** An assertion row names the element it is about, so selecting it boxes that element in the snapshot. A `node:assert` call (or a Python `assert`) takes values rather than elements, so its element comes from where the asserted value was read: `assert.equal(await heading.getText(), 'Secure Area')` names `heading`'s selector, and so does a value from any other element read, WebdriverIO's `getHTML` and `getComputedRole` included. Only a read made earlier in the same test (or Cucumber scenario) counts, and a value read from the page itself, such as the title or the URL, names no element, even when some element's text reads the same. WebdriverIO's `browser.getTitle()` is a `Page.getTitle` row of its own, and `expect(browser).toHaveTitle(...)` folds into that read as one `expect.toHaveTitle` row.
 
-Trace mode and live mode are **mutually exclusive** — `screencast` options are ignored in trace mode (live-mode feature). Live and trace serve different audiences (humans debugging vs. agents diffing), and stacking them only costs perf.
+Trace mode and live mode are **mutually exclusive** — in trace mode `screencast.enabled` is ignored (a warning is logged): `filmstrip` and `video` decide what is recorded, and the screencast tuning fields (`quality`, `maxWidth`, `pollIntervalMs`, …) still apply to whichever recorder runs. Live and trace serve different audiences (humans debugging vs. agents diffing), and stacking them only costs perf.
 
 #### Viewing traces
 

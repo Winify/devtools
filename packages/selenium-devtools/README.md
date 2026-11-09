@@ -314,7 +314,7 @@ DevTools.configure({ rerunCommand: 'npm test -- --grep "{{testName}}"' })
 ```
 
 #### `mode` — live UI vs. headless trace.zip
-**Default:** `'live'` (launches the dashboard window). Set to `'trace'` to skip the dashboard entirely and write a `trace-<sessionId>.zip` under a `test-results/` directory at session end (the base dir resolves from the test file's directory → the config directory → cwd) — meant for CI / offline replay / agentic diffing. For `traceGranularity: 'test'` the per-test artifact lands at `test-results/<spec>-<title>-<browser>[-retryN]/trace.zip`. `screencast` is ignored in trace mode (live-mode-only feature).
+**Default:** `'live'` (launches the dashboard window). Set to `'trace'` to skip the dashboard entirely and write a `trace-<sessionId>.zip` under a `test-results/` directory at session end (the base dir resolves from the test file's directory → the config directory → cwd) — meant for CI / offline replay / agentic diffing. For `traceGranularity: 'test'` the per-test artifact lands at `test-results/<spec>-<title>-<browser>[-retryN]/trace.zip`. `screencast.enabled` is ignored in trace mode: `filmstrip` and `video` decide what is recorded, and the screencast tuning fields still apply.
 
 Set to `'telemetry'` for a run that only reports its results: no backend, no dashboard window, no trace zip, and no per-action DOM, screenshot or screencast capture. The test lifecycle still runs, and the artifacts manifest (`devtools-artifacts-<sessionId>.json`, carrying the run id and each attempt's trace id) is written at session end. Use it when the results go to an OpenTelemetry or other external sink and nothing needs a replayable trace.
 
