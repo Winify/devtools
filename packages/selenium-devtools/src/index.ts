@@ -11,6 +11,7 @@ import {
   handleOnCommand
 } from './helpers/commandPostActions.js'
 import { logConfigSummary } from './helpers/configSummary.js'
+import { screencastFor } from './helpers/screencast-options.js'
 import {
   assertDevToolsMode,
   ignoredOptionsWarning,
@@ -193,20 +194,11 @@ class SeleniumDevToolsPlugin {
     if (options.rerunCommand) {
       this.#rerunManager.configure(options.rerunCommand)
     }
-    // Same gate as DevTools.configure() — direct construction with
-    // `{ mode: 'trace', screencast: { enabled: true } }` would otherwise
-    // bypass the runtime check.
-    if (
-      !startsBackend(this.#options.mode) &&
-      options.screencast?.enabled === true
-    ) {
-      this.#screencastOptions = { ...SCREENCAST_DEFAULTS }
-    } else {
-      this.#screencastOptions = {
-        ...SCREENCAST_DEFAULTS,
-        ...(options.screencast ?? {})
-      }
-    }
+    this.#screencastOptions = screencastFor(
+      { ...SCREENCAST_DEFAULTS },
+      options.screencast,
+      this.#options.mode
+    )
     // Reuse mode: rerun child inherits the parent's backend host/port.
     if (
       process.env[REUSE_ENV.REUSE] === '1' &&
@@ -320,18 +312,15 @@ class SeleniumDevToolsPlugin {
     for (const warning of applyConfigureOptions(this.#options, opts, lock)) {
       log.warn(warning)
     }
-    if (opts.screencast) {
-      if (!startsBackend(this.#options.mode) && opts.screencast.enabled) {
-        log.warn(
-          `${this.#options.mode} mode: ignoring screencast option (live-mode feature)`
-        )
-      } else {
-        this.#screencastOptions = {
-          ...this.#screencastOptions,
-          ...opts.screencast
-        }
-      }
+    const ignored = ignoredOptionsWarning(opts, this.#options.mode)
+    if (ignored) {
+      log.warn(ignored)
     }
+    this.#screencastOptions = screencastFor(
+      this.#screencastOptions,
+      opts.screencast,
+      this.#options.mode
+    )
   }
 
   get options() {
