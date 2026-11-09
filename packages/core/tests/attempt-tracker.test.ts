@@ -85,12 +85,14 @@ describe('TestAttemptTracker', () => {
       ])
     })
 
-    it('recordOutcome can override the slot attempt (authoritative retry #)', () => {
+    it('numbers attempts 0, 1, 2 in start order, the numbers their slices are keyed by', () => {
       const t = new TestAttemptTracker()
-      t.recordStart('a')
-      t.recordOutcome('a', 'failed', 3)
-      expect(t.forTest('a')).toEqual([
-        { uid: 'a', attempt: 3, state: 'failed' }
+      for (const state of ['failed', 'failed', 'passed'] as const) {
+        t.recordStart('a')
+        t.recordOutcome('a', state)
+      }
+      expect(t.attemptsFor('a').map((record) => record.attempt)).toEqual([
+        0, 1, 2
       ])
     })
 

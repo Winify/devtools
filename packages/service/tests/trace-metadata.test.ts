@@ -258,8 +258,12 @@ describe('DevtoolsService - afterTest state stamping', () => {
     await service.after()
     const ctx = finalizeTraceExport.mock.calls.at(-1)?.[0] as {
       testMetadata: Map<string, { attempt?: number }>
+      outcomes: { attemptsFor(uid: string): Array<{ attempt: number }> }
     }
-    expect(ctx.testMetadata.get(deterministicUid(file, title))?.attempt).toBe(3)
+    const uid = deterministicUid(file, title)
+    expect(ctx.testMetadata.get(uid)?.attempt).toBe(3)
+    // The record keeps the ledger's number, the one its trace slice was keyed by.
+    expect(ctx.outcomes.attemptsFor(uid).map((r) => r.attempt)).toEqual([0])
   })
 
   it('takes a Cucumber scenario duration from its own start and end', async () => {
