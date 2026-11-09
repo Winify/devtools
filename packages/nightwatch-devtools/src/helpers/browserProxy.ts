@@ -157,10 +157,6 @@ export class BrowserProxy {
     return this.currentTestFullPath
   }
 
-  setCurrentTestFullPath(path: string | null): void {
-    this.currentTestFullPath = path
-  }
-
   /** Inject the DevTools script after every navigation; see {@link wrapNavigation}. */
   wrapUrlMethod(browser: NightwatchBrowser): void {
     if (!observesPage(this.sessionCapturer.traceMode)) {
@@ -533,9 +529,6 @@ export class BrowserProxy {
     args: unknown[]
   ): CommandInvocation {
     const callInfo = getCallSourceFromStack()
-    if (callInfo.filePath && !this.currentTestFullPath) {
-      this.currentTestFullPath = callInfo.filePath
-    }
     const lastArg = args[args.length - 1]
     // `waitUntil`'s first argument is its condition, never a result callback.
     const hasUserCallback =
@@ -575,6 +568,8 @@ export class BrowserProxy {
       )
     )
 
+    // Before the mode gate: the spec path picks the output dir, so telemetry's manifest lands where trace mode's does.
+    this.currentTestFullPath ??= getCallSourceFromStack().filePath ?? null
     if (!observesPage(this.sessionCapturer.traceMode)) {
       return originalMethod(...args)
     }
