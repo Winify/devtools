@@ -40,11 +40,6 @@ export function isBrowserFetchable(url: string): boolean {
 const VALUE_FLAGS = ['--artifact-base-url', '--run-id'] as const
 type ValueFlag = (typeof VALUE_FLAGS)[number]
 
-const SWITCH_FIELDS = new Map<string, 'dryRun' | 'traceZips'>([
-  ['--dry-run', 'dryRun'],
-  ['--trace-zips', 'traceZips']
-])
-
 export function parseCliArgs(argv: readonly string[]): PushArgs {
   const [command, ...rest] = argv
   if (argv.length === 0 || argv.includes('-h') || argv.includes('--help')) {
@@ -66,9 +61,12 @@ export function parseCliArgs(argv: readonly string[]): PushArgs {
   }
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i]
-    const switchField = SWITCH_FIELDS.get(arg)
-    if (switchField) {
-      args[switchField] = true
+    if (arg === '--dry-run') {
+      args.dryRun = true
+      continue
+    }
+    if (arg === '--trace-zips') {
+      args.traceZips = true
       continue
     }
     const flag = VALUE_FLAGS.find(
