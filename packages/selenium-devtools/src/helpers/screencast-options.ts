@@ -16,14 +16,19 @@ export function screencastFor(
 /** The user's options as given, kept apart from the mode, so a later mode change re-derives from them rather than from an already-forced value. */
 export class ScreencastSettings {
   #input: ScreencastOptions
-  effective: ScreencastOptions
+  #effective: Readonly<ScreencastOptions>
 
   constructor(
     user: ScreencastOptions | undefined,
     mode: DevToolsOptions['mode']
   ) {
     this.#input = { ...SCREENCAST_DEFAULTS, ...user }
-    this.effective = screencastFor(this.#input, undefined, mode)
+    this.#effective = Object.freeze(screencastFor(this.#input, undefined, mode))
+  }
+
+  /** Frozen: a write would be lost at the next update(), so it throws instead; configure() is the way to change it. */
+  get effective(): Readonly<ScreencastOptions> {
+    return this.#effective
   }
 
   update(
@@ -31,6 +36,6 @@ export class ScreencastSettings {
     mode: DevToolsOptions['mode']
   ): void {
     this.#input = { ...this.#input, ...user }
-    this.effective = screencastFor(this.#input, undefined, mode)
+    this.#effective = Object.freeze(screencastFor(this.#input, undefined, mode))
   }
 }

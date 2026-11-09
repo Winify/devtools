@@ -72,7 +72,7 @@ export interface SessionLifecycleCtx {
     video?: TraceVideoPolicy
     emitArtifactsManifest?: boolean
   }
-  readonly screencastOptions: ScreencastOptions
+  readonly screencastOptions: Readonly<ScreencastOptions>
   /** The JS test runner `detectRunner` found (mocha/jest/cucumber). Distinct
    *  from `Metadata.runner`, which names this adapter for every one of them. */
   readonly detectedRunner: DetectedRunner
