@@ -370,7 +370,7 @@ function planManifest(
   input: PushInput,
   { file, manifest, mtimeMs }: ManifestInput,
   readTrace: (zipPath: string) => TracePlayerData | undefined,
-  isLatest: (test: ManifestTest) => boolean
+  isSuperseded: (test: ManifestTest) => boolean
 ): Array<() => PreparedTest> {
   const dir = path.dirname(file)
   const testUids = new Set(manifest.tests.map((test) => test.uid))
@@ -413,44 +413,66 @@ function planManifest(
           artifactUrl
         },
         run,
-        !isLatest(test)
+        isSuperseded(test)
       )
     )
   }
   return pending
 }
 
-function finalStartOf(test: ManifestTest, mtimeMs: number): number {
-  return (
-    test.attempts?.find((record) => record.final)?.startTime ??
-    test.startTime ??
-    mtimeMs
-  )
+interface FinalOutcome {
+  test: ManifestTest
+  state: string
+  startMs: number
+  endMs: number
 }
 
-// specFileRetries reruns a spec in a fresh worker, whose manifest restarts the test's attempts and marks its own
-// final; across the run only the test's latest final is its outcome.
-function latestByUid(
+function finalOutcomeOf(test: ManifestTest, mtimeMs: number): FinalOutcome {
+  const record = test.attempts?.find((candidate) => candidate.final)
+  const startMs = record?.startTime ?? test.startTime ?? mtimeMs
+  return {
+    test,
+    state: test.state,
+    startMs,
+    endMs: record?.endTime ?? test.endTime ?? startMs
+  }
+}
+
+// specFileRetries reruns a failed spec in a fresh worker whose manifest marks its own final, so a failed final that
+// another worker's final started after is a retried attempt. Overlapping finals are siblings (another browser, shard
+// or worker) and each keeps its own outcome.
+function supersededFinals(
   manifests: readonly ManifestInput[]
 ): (test: ManifestTest) => boolean {
-  const latest = new Map<string, { test: ManifestTest; at: number }>()
+  const byUid = new Map<string, FinalOutcome[]>()
   for (const { manifest, mtimeMs } of manifests) {
     for (const test of manifest.tests) {
-      const at = finalStartOf(test, mtimeMs)
-      const current = latest.get(test.uid)
-      if (!current || at >= current.at) {
-        latest.set(test.uid, { test, at })
+      const finals = byUid.get(test.uid) ?? []
+      finals.push(finalOutcomeOf(test, mtimeMs))
+      byUid.set(test.uid, finals)
+    }
+  }
+  const superseded = new Set<ManifestTest>()
+  for (const finals of byUid.values()) {
+    for (const earlier of finals) {
+      if (
+        earlier.state === STATE_FAILED &&
+        finals.some(
+          (later) => later !== earlier && later.startMs >= earlier.endMs
+        )
+      ) {
+        superseded.add(earlier.test)
       }
     }
   }
-  return (test) => latest.get(test.uid)?.test === test
+  return (test) => superseded.has(test)
 }
 
 export function planPush(input: PushInput): PushPlan {
   const reader = zipReader(input.loadZip, input.warn)
-  const isLatest = latestByUid(input.manifests)
+  const isSuperseded = supersededFinals(input.manifests)
   const pending = input.manifests.flatMap((manifest) =>
-    planManifest(input, manifest, reader.read, isLatest)
+    planManifest(input, manifest, reader.read, isSuperseded)
   )
   return {
     unreadable: () => reader.unreadable(),
