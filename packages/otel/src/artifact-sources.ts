@@ -3,7 +3,7 @@ import { parseTraceZip } from '@wdio/devtools-trace/trace-reader'
 import { retryKeyOf, type TracePlayerData } from '@wdio/devtools-shared'
 import type { ManifestArtifact, Manifest, ManifestTest } from './manifest.js'
 
-// Keyless artifacts (session-scope zips, manifests from before `key`) name their attempt only in the folder.
+// Keyless artifacts (session-scope zips, manifests from before `key`) name their attempt only in the folder; a per-test key ends the same way.
 const RETRY_DIR_SUFFIX = /-retry(\d+)$/
 
 export function describe(error: unknown): string {
@@ -25,7 +25,12 @@ function pickTraceArtifact(
   candidates: ManifestArtifact[],
   test: ManifestTest
 ): ManifestArtifact | undefined {
-  if (candidates.some((artifact) => artifact.key !== undefined)) {
+  // A spec-scope zip is keyed by its spec file, so only a per-test key (uid or uid-retryN) selects an exact attempt.
+  if (
+    candidates.some(
+      (artifact) => artifact.key?.replace(RETRY_DIR_SUFFIX, '') === test.uid
+    )
+  ) {
     const key = retryKeyOf(test.uid, finalAttemptOf(test))
     return candidates.find((artifact) => artifact.key === key)
   }
