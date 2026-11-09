@@ -437,7 +437,7 @@
     {
       "type": "table",
       "title": "Test results",
-      "description": "One row per test, from its final attempt (span devtools.* attributes on the test root span). Replay opens the trace zip in the replay host set by the player_base variable (default player.vibium.dev); the zip is fetched by your browser from the artifact URL.",
+      "description": "One row per test, from its final attempt (span devtools.* attributes on the test root span). Artifact is the trace zip's URL as pushed; the Replays panel below links the ones a browser can open.",
       "gridPos": {
         "x": 0,
         "y": 20,
@@ -456,26 +456,7 @@
             }
           }
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Artifact"
-            },
-            "properties": [
-              {
-                "id": "links",
-                "value": [
-                  {
-                    "title": "Open replay in ${player_base}",
-                    "url": "${player_base}/?record=${__value.raw:percentencode}",
-                    "targetBlank": true
-                  }
-                ]
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "options": {
         "showHeader": true,
@@ -537,10 +518,111 @@
     },
     {
       "type": "table",
-      "title": "Test results (latest traces)",
+      "title": "Replays",
+      "description": "Final attempts whose trace zip has an http(s) URL, each linked to the replay host set by the player_base variable (default player.vibium.dev). Your browser fetches the zip from the artifact URL. Tests with no retained zip, or an s3:// URL, are not listed.",
       "gridPos": {
         "x": 0,
         "y": 31,
+        "w": 24,
+        "h": 9
+      },
+      "datasource": {
+        "type": "tempo",
+        "uid": "tempo"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Artifact"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open replay in ${player_base}",
+                    "url": "${player_base}/?record=${__value.raw:percentencode}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Time",
+            "desc": true
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "queryType": "traceql",
+          "metricsQueryType": "instant",
+          "query": "{ resource.service.name=\"devtools-tests\" && span.test.case.result.status != nil && span.devtools.test.final_attempt = true && span.devtools.artifact.url =~ \"https?://.+\" } | max_over_time(span.devtools.duration_ms) by (trace:id, span.test.case.name, span.test.case.result.status, span.devtools.failed_action, span.devtools.artifact.url)"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "merge"
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "time": true
+            },
+            "indexByName": {
+              "trace:id": 0,
+              "span.test.case.name": 1,
+              "span.test.case.result.status": 2,
+              "value": 3,
+              "span.devtools.failed_action": 4,
+              "span.devtools.artifact.url": 5
+            },
+            "renameByName": {
+              "trace:id": "Trace ID",
+              "span.test.case.name": "Test",
+              "span.test.case.result.status": "Status",
+              "value": "Duration (ms)",
+              "span.devtools.failed_action": "Failed action",
+              "span.devtools.artifact.url": "Artifact"
+            }
+          }
+        }
+      ],
+      "id": 11
+    },
+    {
+      "type": "table",
+      "title": "Test results (latest traces)",
+      "gridPos": {
+        "x": 0,
+        "y": 40,
         "w": 24,
         "h": 9
       },

@@ -60,7 +60,7 @@ Verified against these tags: the `lgtm-data` volume at `/data` holds Grafana, Te
 
 ## One-click replay
 
-The dashboard "WebdriverIO DevTools - Test Results" has a Test results table. Its Artifact column shows each attempt's zip URL and links to `${player_base}/?record=<zip URL>`, where `player_base` is the dashboard's Replay host variable. Your browser fetches the zip from the bucket directly, so the zip never transits Grafana. The link is on every row, including rows with no artifact and `s3://` URLs that a browser cannot open. `devtools-otel push` warns when `--artifact-base-url` is not `http(s)://`.
+The dashboard "WebdriverIO DevTools - Test Results" has a Test results table, whose Artifact column shows each test's zip URL, and a Replays table below it. Replays lists only the tests whose zip URL is `http(s)://` and links each to `${player_base}/?record=<zip URL>`, where `player_base` is the dashboard's Replay host variable. Your browser fetches the zip from the bucket directly, so the zip never transits Grafana. A test whose zip a retain policy dropped, or whose URL is `s3://`, has no replay row. `devtools-otel push` warns when `--artifact-base-url` is not `http(s)://`.
 
 For the link to work, the artifact base URL must be an HTTP(S) address your browser can reach, as in step 4 above. Use https in real deployments. The bucket must allow anonymous `GET` and CORS from the replay host. `s3-init` sets both on the local stack from `s3/bucket-policy.json` and `s3/cors.json`; that CORS rule names `https://player.vibium.dev`, so a different `player_base` needs its origin added to `s3/cors.json` as well.
 
