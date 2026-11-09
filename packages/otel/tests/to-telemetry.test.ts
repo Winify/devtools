@@ -971,6 +971,32 @@ describe('pushRun timing', () => {
     )
   })
 
+  it('names the trace as the source when the manifest gives a start but no end', async () => {
+    const startOnly = (artifacts: Manifest['artifacts']) => {
+      const record = finalRecord(0, 'failed', 'c0ffee0123456789')
+      delete record.endTime
+      return stampedManifest([record], { artifacts })
+    }
+    const timing = async (manifest: Manifest) => {
+      const { spans } = await push({
+        manifests: [{ file: MANIFEST_FILE, manifest }]
+      })
+      const root = byName(spans, 'logs in')
+      return [
+        root.attributes[attr.ATTR_TIME_SOURCE],
+        root.attributes[attr.ATTR_DURATION_MS]
+      ]
+    }
+    expect(await timing(startOnly(manifestOf().artifacts))).toEqual([
+      attr.TIME_SOURCE_TRACE,
+      600
+    ])
+    expect(await timing(startOnly([]))).toEqual([
+      attr.TIME_SOURCE_MANIFEST,
+      undefined
+    ])
+  })
+
   it('stamps trace-derived roots with trace time', async () => {
     const { spans } = await push()
     const root = byName(spans, 'logs in')
