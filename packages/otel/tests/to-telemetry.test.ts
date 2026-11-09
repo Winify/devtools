@@ -817,6 +817,26 @@ describe('pushRun attempt selection', () => {
     ).toBe('https://bucket.example/run-1/b-retry1/trace.zip')
   })
 
+  it("puts the final attempt's zip under the final root alone", async () => {
+    const manifest = retriedManifest(keyedArtifacts, {
+      attempts: [
+        attemptRecord(0, 'failed', '000000000000aaa1'),
+        attemptRecord(1, 'passed', 'bbbbbbbbbbbbbbb2')
+      ]
+    })
+    const { spans } = await push({
+      manifests: [{ file: MANIFEST_FILE, manifest }],
+      zips: await retryZips()
+    })
+    const childrenOf = (spanId: string) =>
+      spans
+        .filter((span) => span.parentSpanContext?.spanId === spanId)
+        .map((span) => span.name)
+    const [first, final] = rootsNamed(spans, RETRIED_TITLE)
+    expect(childrenOf(first.spanContext().spanId)).toEqual([])
+    expect(childrenOf(final.spanContext().spanId)).toEqual(['Login'])
+  })
+
   it('never stands an earlier attempt zip in for a final attempt that has none', async () => {
     const firstOnly: Manifest['artifacts'] = [keyedArtifacts[0]]
     const { spans, warnings } = await push({
