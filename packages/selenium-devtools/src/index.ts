@@ -707,12 +707,11 @@ if (patched) {
 }
 
 // Patch eagerly (user specs must see the wrappers before they import assert);
-// the gate runs at capture time because DevTools.configure() may arrive later.
-patchNodeAssert((cmd) => {
-  if (plugin.options.captureAssertions) {
-    void plugin.onCommand(cmd)
-  }
-})
+// the gate runs per call because DevTools.configure() may change the mode later.
+patchNodeAssert(
+  (cmd) => void plugin.onCommand(cmd),
+  () => plugin.options.captureAssertions && observesPage(plugin.options.mode)
+)
 
 const runnerHookCallbacks: RunnerHookCallbacks = {
   onTestStart: (name, file, callSource, suiteName, suiteCallSource, attempt) =>
