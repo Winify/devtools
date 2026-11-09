@@ -292,20 +292,26 @@ function parentContextOf(parent: ManifestParent | undefined): Context {
   })
 }
 
-function prepareRoot(view: AttemptView, facts: PreparedFacts): PreparedRoot {
+// A superseded final loses only the final flag: its error, failed action and zip are still its own, not a retry's.
+function prepareRoot(
+  view: AttemptView,
+  facts: PreparedFacts,
+  superseded: boolean
+): PreparedRoot {
   const { test, run, span, evidence, finalExtra, errorMessage } = facts
+  const final = view.final && !superseded
   const attributes = testAttributes(test, run.runId, view.state, view.attempt, {
     ...timingAttributes(test, view, span),
     ...(view.final ? finalExtra : {})
   })
   return {
-    attributes: { ...attributes, [attr.ATTR_TEST_FINAL_ATTEMPT]: view.final },
+    attributes: { ...attributes, [attr.ATTR_TEST_FINAL_ATTEMPT]: final },
     bounds: rootBounds(view.timing, view.final ? span : undefined, run.mtimeMs),
     state: view.state,
     errorMessage: view.final ? errorMessage : undefined,
     ids: view.ids,
     context: parentContextOf(run.parent),
-    final: view.final,
+    final,
     trace: view.final ? evidence : undefined
   }
 }
@@ -353,14 +359,11 @@ function prepareTest(
   return {
     test,
     roots: attemptViews(test).map((view) =>
-      prepareRoot(superseded ? { ...view, final: false } : view, {
-        test,
-        run,
-        span,
-        evidence,
-        finalExtra,
-        errorMessage
-      })
+      prepareRoot(
+        view,
+        { test, run, span, evidence, finalExtra, errorMessage },
+        superseded
+      )
     )
   }
 }
