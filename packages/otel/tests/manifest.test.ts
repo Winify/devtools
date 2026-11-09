@@ -126,7 +126,8 @@ describe('parseManifest run identity and attempts', () => {
     startTime: 1,
     endTime: 2,
     traceId: TRACE_ID,
-    spanId: SPAN_ID
+    spanId: SPAN_ID,
+    final: true
   }
   const stamped = {
     ...valid,
@@ -181,6 +182,16 @@ describe('parseManifest run identity and attempts', () => {
       ...stamped,
       tests: [{ ...valid.tests[0], attempts: [{ ...attempt, ...ids }] }]
     }
+    expect(() => parseManifest(broken, 'm.json')).toThrow(
+      'is not an artifacts manifest'
+    )
+  })
+
+  it.each([
+    ['none', [{ ...attempt, final: undefined }]],
+    ['two', [attempt, { ...attempt, attempt: 1 }]]
+  ])('rejects attempts with %s stamped final', (_, attempts) => {
+    const broken = { ...stamped, tests: [{ ...valid.tests[0], attempts }] }
     expect(() => parseManifest(broken, 'm.json')).toThrow(
       'is not an artifacts manifest'
     )

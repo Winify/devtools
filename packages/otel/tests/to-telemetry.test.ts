@@ -821,7 +821,7 @@ describe('pushRun attempt selection', () => {
     const manifest = retriedManifest(keyedArtifacts, {
       attempts: [
         attemptRecord(0, 'failed', '000000000000aaa1'),
-        attemptRecord(1, 'passed', 'bbbbbbbbbbbbbbb2')
+        finalRecord(1, 'passed', 'bbbbbbbbbbbbbbb2')
       ]
     })
     const { spans } = await push({
@@ -1043,6 +1043,9 @@ const attemptRecord = (
   traceId,
   spanId
 })
+const finalRecord = (
+  ...args: Parameters<typeof attemptRecord>
+): TestAttemptRecord => ({ ...attemptRecord(...args), final: true })
 
 const stampedManifest = (
   attempts: TestAttemptRecord[],
@@ -1070,7 +1073,7 @@ describe('pushRun stamped ids', () => {
   it('roots each attempt of a run without TRACEPARENT in its own trace with its stamped ids', async () => {
     const manifest = stampedManifest([
       attemptRecord(0, 'failed', '000000000000aaa1'),
-      attemptRecord(1, 'failed', 'bbbbbbbbbbbbbbb2')
+      finalRecord(1, 'failed', 'bbbbbbbbbbbbbbb2')
     ])
     const { spans } = await push({
       manifests: [{ file: MANIFEST_FILE, manifest }],
@@ -1109,7 +1112,7 @@ describe('pushRun stamped ids', () => {
 
   it('pushes the same ids, children included, on every push', async () => {
     const manifest = stampedManifest(
-      [attemptRecord(1, 'failed', 'c0ffee0123456789')],
+      [finalRecord(1, 'failed', 'c0ffee0123456789')],
       {
         artifacts: [
           {
@@ -1132,7 +1135,7 @@ describe('pushRun stamped ids', () => {
 
   it('derives each action span id from its root and ordinal under --trace-zips', async () => {
     const manifest = stampedManifest(
-      [attemptRecord(0, 'failed', 'c0ffee0123456789')],
+      [finalRecord(0, 'failed', 'c0ffee0123456789')],
       {
         artifacts: [
           {
@@ -1161,7 +1164,7 @@ describe('pushRun stamped ids', () => {
 
   it('links every root to the parent context from the manifest', async () => {
     const manifest = stampedManifest(
-      [attemptRecord(0, 'passed', '000000000000aaa1')],
+      [finalRecord(0, 'passed', '000000000000aaa1')],
       {
         parent: { traceId: TRACE_A, spanId: PARENT_SPAN, traceFlags: 1 }
       }
@@ -1275,7 +1278,7 @@ describe('pushRun final attempt marker', () => {
           attempt: 1,
           attempts: [
             attemptRecord(0, 'failed', '000000000000aaa1'),
-            attemptRecord(1, 'passed', 'bbbbbbbbbbbbbbb2')
+            finalRecord(1, 'passed', 'bbbbbbbbbbbbbbb2')
           ]
         }
       ]
@@ -1349,7 +1352,7 @@ describe('pushRun final attempt marker', () => {
     const manifest = failThenPass()
     manifest.tests[0].attempts = [
       attemptRecord(0, 'failed', '000000000000aaa1'),
-      attemptRecord(1, 'failed', 'bbbbbbbbbbbbbbb2')
+      finalRecord(1, 'failed', 'bbbbbbbbbbbbbbb2')
     ]
     const { spans } = await push({
       manifests: [{ file: MANIFEST_FILE, manifest }],
@@ -1391,38 +1394,6 @@ describe('pushRun final attempt marker', () => {
     )
     expect(finals).toHaveLength(1)
     expect(finals[0].spanContext().spanId).toBe('000000000000aaa1')
-  })
-
-  it('takes the highest record as final in a manifest with no stamped record, without a warning', async () => {
-    const manifest = manifestOf({
-      artifacts: [],
-      tests: [
-        {
-          uid: 'uid-login',
-          title: 'logs in',
-          specFile: 'specs/login.spec.ts',
-          state: 'failed',
-          attempt: 2,
-          attempts: [
-            attemptRecord(0, 'failed', '000000000000aaa1'),
-            attemptRecord(1, 'failed', 'bbbbbbbbbbbbbbb2')
-          ]
-        }
-      ]
-    })
-    const { spans, warnings } = await push({
-      manifests: [{ file: MANIFEST_FILE, manifest }],
-      traceZips: false
-    })
-    expect(warnings).toEqual([])
-    const finals = rootsNamed(spans, 'logs in').filter(
-      (root) => root.attributes[attr.ATTR_TEST_FINAL_ATTEMPT] === true
-    )
-    expect(finals).toHaveLength(1)
-    expect(finals[0].spanContext().spanId).toBe('bbbbbbbbbbbbbbb2')
-    expect(finals[0].attributes[attr.ATTR_TEST_CASE_RESULT_STATUS]).toBe(
-      attr.TEST_CASE_RESULT_STATUS_FAIL
-    )
   })
 })
 
