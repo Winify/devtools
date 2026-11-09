@@ -62,13 +62,6 @@ export class ScreencastLifecycle {
 
   constructor(ctx: ScreencastLifecycleContext) {
     this.#ctx = ctx
-    if (capturesTrace(ctx.options.mode) && ctx.options.screencast?.enabled) {
-      ctx.log(
-        'warn',
-        'trace mode: `screencast.enabled` is ignored — use `video` to record; ' +
-          'the tuning fields (quality/interval) still apply'
-      )
-    }
   }
 
   /** Filmstrip defaults ON in trace mode; explicit `filmstrip: false` opts out. */

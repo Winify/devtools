@@ -66,3 +66,44 @@ export function observesPage(mode: DevToolsMode = 'live'): boolean {
 export function forcesManifest(mode: DevToolsMode = 'live'): boolean {
   return traitsOf(mode).forcesManifest
 }
+
+export interface ModeScopedOptions {
+  traceFormat?: unknown
+  traceGranularity?: unknown
+  tracePolicy?: unknown
+  filmstrip?: unknown
+  screenshot?: unknown
+  video?: unknown
+  screencast?: { enabled?: boolean }
+}
+
+const TRACE_ONLY_OPTIONS = [
+  'traceFormat',
+  'traceGranularity',
+  'tracePolicy',
+  'filmstrip',
+  'screenshot',
+  'video'
+] as const
+
+/** Names each option the user set that this mode drops, so a run that records nothing says why; undefined when every set option applies. */
+export function ignoredOptionsWarning(
+  options: ModeScopedOptions,
+  mode: DevToolsMode = 'live'
+): string | undefined {
+  const ignored = capturesTrace(mode)
+    ? []
+    : TRACE_ONLY_OPTIONS.filter((key) => options[key] !== undefined).map(
+        (key) => `\`${key}\` (trace mode only)`
+      )
+  if (!startsBackend(mode) && options.screencast?.enabled === true) {
+    ignored.push(
+      capturesTrace(mode)
+        ? '`screencast.enabled` (live mode only; `filmstrip` and `video` decide recording, the quality/interval fields still apply)'
+        : '`screencast.enabled` (live mode only)'
+    )
+  }
+  return ignored.length
+    ? `${mode} mode ignores ${ignored.join(', ')}.`
+    : undefined
+}

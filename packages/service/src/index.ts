@@ -13,7 +13,6 @@ import {
   resolveAdapterOutputDir,
   stepMetadataUid,
   TestAttemptTracker,
-  tracePolicyModeWarning,
   upsertRichestSnapshot,
   type TraceArtifact,
   type TraceExportContext,
@@ -40,6 +39,7 @@ import {
 import {
   assertDevToolsMode,
   capturesTrace,
+  ignoredOptionsWarning,
   isWaitCommand,
   skipsCapture,
   startsBackend,
@@ -119,8 +119,8 @@ export default class DevToolsHookService implements Services.ServiceInstance {
       options: this.#options,
       actionSnapshots: this.#actionSnapshots
     })
-    const policyWarning = tracePolicyModeWarning(
-      serviceOptions.tracePolicy,
+    const policyWarning = ignoredOptionsWarning(
+      serviceOptions,
       serviceOptions.mode
     )
     if (policyWarning) {

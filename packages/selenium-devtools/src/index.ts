@@ -13,6 +13,7 @@ import {
 import { logConfigSummary } from './helpers/configSummary.js'
 import {
   assertDevToolsMode,
+  ignoredOptionsWarning,
   startsBackend,
   observesPage
 } from '@wdio/devtools-shared'
@@ -61,8 +62,7 @@ import {
 import {
   RetryTracker,
   errorMessage,
-  requestsInterceptedNetwork,
-  tracePolicyModeWarning
+  requestsInterceptedNetwork
 } from '@wdio/devtools-core'
 import { SeleniumTestArtifacts } from './test-artifacts.js'
 import { claimMochaRootHooks, tryRegisterRunnerHooks } from './runnerHooks.js'
@@ -185,10 +185,7 @@ class SeleniumDevToolsPlugin {
       video: options.video ?? 'off',
       emitArtifactsManifest: options.emitArtifactsManifest
     }
-    const policyWarning = tracePolicyModeWarning(
-      options.tracePolicy,
-      this.#options.mode
-    )
+    const policyWarning = ignoredOptionsWarning(options, this.#options.mode)
     if (policyWarning) {
       log.warn(policyWarning)
     }
@@ -203,9 +200,6 @@ class SeleniumDevToolsPlugin {
       !startsBackend(this.#options.mode) &&
       options.screencast?.enabled === true
     ) {
-      log.warn(
-        `${this.#options.mode} mode: ignoring screencast option (live-mode feature)`
-      )
       this.#screencastOptions = { ...SCREENCAST_DEFAULTS }
     } else {
       this.#screencastOptions = {

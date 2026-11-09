@@ -12,7 +12,6 @@ import {
   flushRangeLogged,
   resolveAdapterOutputDir,
   TestAttemptTracker,
-  tracePolicyModeWarning,
   type SpecRange,
   type TraceArtifact,
   type TraceExportContext
@@ -25,6 +24,7 @@ import {
   REUSE_ENV,
   assertDevToolsMode,
   capturesTrace,
+  ignoredOptionsWarning,
   startsBackend,
   type CucumberPickle,
   type CucumberPickleStep,
@@ -155,9 +155,6 @@ class NightwatchDevToolsPlugin {
       video,
       screencast: options.screencast
     })
-    if (screencast.warning) {
-      log.warn(screencast.warning)
-    }
     this.options = {
       port: options.port ?? 3000,
       hostname: options.hostname ?? 'localhost',
@@ -175,7 +172,7 @@ class NightwatchDevToolsPlugin {
       // off by default, opt-in via the option.
       emitArtifactsManifest: options.emitArtifactsManifest ?? false
     }
-    const policyWarning = tracePolicyModeWarning(options.tracePolicy, mode)
+    const policyWarning = ignoredOptionsWarning(options, mode)
     if (policyWarning) {
       log.warn(policyWarning)
     }

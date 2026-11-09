@@ -39,14 +39,13 @@ export interface ScreencastResolutionInput {
 export interface ResolvedScreencast {
   /** What the plugin exposes as `options.screencast`. */
   options: ScreencastOptions
-  /** Config warning to log, when the mode makes the option meaningless. */
-  warning?: string
 }
 
 /**
  * Whether this run records a screencast, and under which options. Filmstrip OR a
  * produce-only per-test video drives the recorder in trace mode; bare screencast
- * with neither is a live-mode feature and is dropped there.
+ * with neither is a live-mode feature and is dropped there. The caller's
+ * `ignoredOptionsWarning` names that drop.
  */
 export function resolveScreencastOptions(
   input: ScreencastResolutionInput
@@ -62,10 +61,7 @@ export function resolveScreencastOptions(
     return { options: { ...screencast, enabled: true } }
   }
   if (screencast.enabled === true) {
-    return {
-      options: {},
-      warning: 'trace mode: ignoring screencast option (live-mode feature)'
-    }
+    return { options: {} }
   }
   return { options: screencast }
 }
