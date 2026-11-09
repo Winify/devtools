@@ -326,7 +326,8 @@ function failedActionOf(
 function prepareTest(
   test: ManifestTest,
   source: TestSource,
-  run: RunContext
+  run: RunContext,
+  superseded: boolean
 ): PreparedTest {
   const { data, artifactUrl } = source
   const actions = data ? actionInfos(data.trace.commands) : []
@@ -352,7 +353,7 @@ function prepareTest(
   return {
     test,
     roots: attemptViews(test).map((view) =>
-      prepareRoot(view, {
+      prepareRoot(superseded ? { ...view, final: false } : view, {
         test,
         run,
         span,
@@ -368,7 +369,8 @@ function prepareTest(
 function planManifest(
   input: PushInput,
   { file, manifest, mtimeMs }: ManifestInput,
-  readTrace: (zipPath: string) => TracePlayerData | undefined
+  readTrace: (zipPath: string) => TracePlayerData | undefined,
+  isLatest: (test: ManifestTest) => boolean
 ): Array<() => PreparedTest> {
   const dir = path.dirname(file)
   const testUids = new Set(manifest.tests.map((test) => test.uid))
@@ -410,17 +412,45 @@ function planManifest(
               : undefined,
           artifactUrl
         },
-        run
+        run,
+        !isLatest(test)
       )
     )
   }
   return pending
 }
 
+function finalStartOf(test: ManifestTest, mtimeMs: number): number {
+  return (
+    test.attempts?.find((record) => record.final)?.startTime ??
+    test.startTime ??
+    mtimeMs
+  )
+}
+
+// specFileRetries reruns a spec in a fresh worker, whose manifest restarts the test's attempts and marks its own
+// final; across the run only the test's latest final is its outcome.
+function latestByUid(
+  manifests: readonly ManifestInput[]
+): (test: ManifestTest) => boolean {
+  const latest = new Map<string, { test: ManifestTest; at: number }>()
+  for (const { manifest, mtimeMs } of manifests) {
+    for (const test of manifest.tests) {
+      const at = finalStartOf(test, mtimeMs)
+      const current = latest.get(test.uid)
+      if (!current || at >= current.at) {
+        latest.set(test.uid, { test, at })
+      }
+    }
+  }
+  return (test) => latest.get(test.uid)?.test === test
+}
+
 export function planPush(input: PushInput): PushPlan {
   const reader = zipReader(input.loadZip, input.warn)
+  const isLatest = latestByUid(input.manifests)
   const pending = input.manifests.flatMap((manifest) =>
-    planManifest(input, manifest, reader.read)
+    planManifest(input, manifest, reader.read, isLatest)
   )
   return {
     unreadable: () => reader.unreadable(),
