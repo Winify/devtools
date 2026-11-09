@@ -428,7 +428,7 @@
         {
           "refId": "A",
           "queryType": "traceql",
-          "query": "{ span.test.case.result.status = \"fail\" }",
+          "query": "{ resource.service.name=\"devtools-tests\" && span.test.case.result.status = \"fail\" && span.devtools.test.final_attempt = true }",
           "limit": 20
         }
       ],
