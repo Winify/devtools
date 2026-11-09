@@ -12,7 +12,6 @@ export type ParentTraceContext = TestTraceContext & { traceState?: string }
 
 export const TRACE_ID_BYTES = 16
 export const SPAN_ID_BYTES = 8
-export const TRACE_FLAGS_SAMPLED = 1
 
 export const TRACE_CONTEXT_ENV = {
   TRACEPARENT: 'TRACEPARENT',
@@ -41,11 +40,6 @@ export function isSpanId(value: unknown): value is string {
     SPAN_ID_RE.test(value) &&
     !ALL_ZERO_RE.test(value)
   )
-}
-
-export function formatTraceparent(ctx: TestTraceContext): string {
-  const flags = ctx.traceFlags.toString(16).padStart(2, '0')
-  return `${VERSION_00}-${ctx.traceId}-${ctx.spanId}-${flags}`
 }
 
 /** Versions above `00` may append fields; `00` admits exactly four. */

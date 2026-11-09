@@ -1,16 +1,16 @@
-import type {
-  TestAttemptRecord,
-  TestStatus,
-  TestTraceContext
-} from '@wdio/devtools-shared'
+import type { TestAttemptRecord, TestStatus } from '@wdio/devtools-shared'
 import type { TestOutcome } from '@wdio/devtools-trace/trace-retention'
-import { mintTraceContext, resolveParentTraceContext } from './trace-context.js'
+import {
+  mintTraceContext,
+  resolveParentTraceContext,
+  type AttemptIds
+} from './trace-context.js'
 
 interface AttemptSlot {
   outcome: TestOutcome
   startTime: number
   endTime?: number
-  trace: TestTraceContext
+  trace: AttemptIds
 }
 
 /**

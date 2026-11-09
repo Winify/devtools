@@ -3,19 +3,20 @@ import {
   randomTraceId,
   parseTraceparent,
   TRACE_CONTEXT_ENV,
-  TRACE_FLAGS_SAMPLED,
   type ParentTraceContext,
   type TestTraceContext
 } from '@wdio/devtools-shared'
 
+// Sampling is the parent's to decide, and the manifest records it once on `parent`, so an attempt carries ids alone.
+export type AttemptIds = Pick<TestTraceContext, 'traceId' | 'spanId'>
+
 let parentCache: { value: ParentTraceContext | undefined } | undefined
 
 /** A new context for one test attempt; a parent contributes the trace it joins. */
-export function mintTraceContext(parent?: TestTraceContext): TestTraceContext {
+export function mintTraceContext(parent?: TestTraceContext): AttemptIds {
   return {
     traceId: parent?.traceId ?? randomTraceId(),
-    spanId: randomSpanId(),
-    traceFlags: parent?.traceFlags ?? TRACE_FLAGS_SAMPLED
+    spanId: randomSpanId()
   }
 }
 
