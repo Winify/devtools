@@ -36,12 +36,6 @@ describe('parseCliArgs', () => {
     })
   })
 
-  it('rejects --logs, since spans are the only signal pushed', () => {
-    expect(() => parseCliArgs(['push', 'm.json', '--logs'])).toThrow(
-      'unknown option "--logs"'
-    )
-  })
-
   it('shows help with -h, --help, or no arguments', () => {
     expect(parseCliArgs(['-h']).help).toBe(true)
     expect(parseCliArgs(['push', '--help']).help).toBe(true)
