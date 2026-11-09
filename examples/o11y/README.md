@@ -137,7 +137,7 @@ The provisioned dashboard currently filters on `resource.service.name="devtools-
 
 ## Queries
 
-Test results are spans in Tempo, queried with TraceQL. Every attempt is a root span named after the test, with `service.name` `devtools-tests`. Every attempt is a root span, but the dashboard's test-level panels count only each test's final attempt, selected by `span.devtools.test.final_attempt = true`, so a retried test counts once and a test that failed then passed is not a failure. The Flaky panel is the one that reads earlier attempts, through `span.devtools.test.attempt`. Spans pushed before this attribute existed carry none, so those panels do not count them. The metrics panels read a 24-hour window at most, and Tempo rejects a longer range for TraceQL metrics.
+Test results are spans in Tempo, queried with TraceQL. Every attempt is a root span named after the test, with `service.name` `devtools-tests`, but the dashboard's test-level panels count only each test's final attempt, selected by `span.devtools.test.final_attempt = true`, so a retried test counts once and a test that failed then passed is not a failure. The Flaky panel is the one that reads earlier attempts, through `span.devtools.test.attempt`. Spans pushed before this attribute existed carry none, so those panels do not count them. The metrics panels read a 24-hour window at most, and Tempo rejects a longer range for TraceQL metrics.
 
 Passed tests in the range, from their final attempts:
 
