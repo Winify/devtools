@@ -159,15 +159,13 @@ describe('parseManifest run identity and attempts', () => {
     )
   })
 
-  it('rejects a span id that is not 16 lowercase hex characters', () => {
+  it.each([
+    ['uppercase', SPAN_ID.toUpperCase()],
+    ['15-character', SPAN_ID.slice(1)]
+  ])('rejects a %s span id', (_, spanId) => {
     const broken = {
       ...stamped,
-      tests: [
-        {
-          ...valid.tests[0],
-          attempts: [{ ...attempt, spanId: SPAN_ID.toUpperCase() }]
-        }
-      ]
+      tests: [{ ...valid.tests[0], attempts: [{ ...attempt, spanId }] }]
     }
     expect(() => parseManifest(broken, 'm.json')).toThrow(
       'is not an artifacts manifest'
