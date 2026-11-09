@@ -669,7 +669,7 @@
         "type": "textbox",
         "name": "player_base",
         "label": "Replay host",
-        "description": "Origin the Replay column opens the trace zip in. Opting in shares the zip URL with that origin; see examples/o11y/README.md.",
+        "description": "Origin the Replays panel's Artifact links open the trace zip in. Opting in shares the zip URL with that origin; see examples/o11y/README.md.",
         "query": "https://player.vibium.dev",
         "current": {
           "text": "https://player.vibium.dev",
