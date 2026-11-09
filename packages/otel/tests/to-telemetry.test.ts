@@ -1082,6 +1082,80 @@ const stampedManifest = (
 const rootsNamed = (spans: ReadableSpan[], name: string): ReadableSpan[] =>
   spans.filter((span) => span.name === name)
 
+describe('pushRun across specFileRetries workers', () => {
+  const worker = (
+    sessionId: string,
+    state: 'failed' | 'passed',
+    spanId: string,
+    traceId: string,
+    offsetMs: number
+  ): Manifest =>
+    manifestOf({
+      sessionId,
+      artifacts: [],
+      tests: [
+        {
+          uid: 'uid-login',
+          title: 'logs in',
+          specFile: 'specs/login.spec.ts',
+          state,
+          attempt: 0,
+          error: state === 'failed' ? 'boom' : undefined,
+          attempts: [
+            {
+              ...finalRecord(0, state, spanId, traceId),
+              startTime: EPOCH_2025 + offsetMs,
+              endTime: EPOCH_2025 + offsetMs + 500
+            }
+          ]
+        }
+      ]
+    })
+
+  it("keeps only the later worker's root final", async () => {
+    const first = worker('s1', 'failed', '000000000000aaa1', TRACE_A, 0)
+    const retry = worker('s2', 'passed', 'bbbbbbbbbbbbbbb2', TRACE_B, 10_000)
+    for (const order of [
+      [first, retry],
+      [retry, first]
+    ]) {
+      const { spans } = await push({
+        manifests: order.map((manifest) => ({
+          file: path.join(
+            RUN_DIR,
+            `devtools-artifacts-${manifest.sessionId}.json`
+          ),
+          manifest
+        })),
+        traceZips: false
+      })
+      const roots = rootsNamed(spans, 'logs in').map((root) => [
+        root.spanContext().spanId,
+        root.attributes[attr.ATTR_TEST_FINAL_ATTEMPT],
+        root.attributes[attr.ATTR_TEST_CASE_RESULT_STATUS],
+        root.attributes[attr.ATTR_ERROR_MESSAGE]
+      ])
+      expect(roots).toEqual(
+        expect.arrayContaining([
+          [
+            '000000000000aaa1',
+            false,
+            attr.TEST_CASE_RESULT_STATUS_FAIL,
+            undefined
+          ],
+          [
+            'bbbbbbbbbbbbbbb2',
+            true,
+            attr.TEST_CASE_RESULT_STATUS_PASS,
+            undefined
+          ]
+        ])
+      )
+      expect(roots).toHaveLength(2)
+    }
+  })
+})
+
 describe('pushRun stamped ids', () => {
   it('roots each attempt of a run without TRACEPARENT in its own trace with its stamped ids', async () => {
     const manifest = stampedManifest([
