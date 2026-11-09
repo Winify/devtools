@@ -268,7 +268,10 @@ export default class DevToolsHookService implements Services.ServiceInstance {
     stampRunnerMetadata(this.#sessionCapturer, browser, this.captureType)
     publishConfigFile(this.#sessionCapturer)
 
-    if (this.#options.captureAssertions !== false) {
+    if (
+      this.#options.captureAssertions !== false &&
+      observesPage(this.#options.mode)
+    ) {
       wireAssertCapture(
         () => this.#sessionCapturer,
         () => this.#currentTestUid
