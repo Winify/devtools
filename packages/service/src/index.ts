@@ -92,7 +92,7 @@ export { setupForDevtools } from './standalone.js'
 
 export default class DevToolsHookService implements Services.ServiceInstance {
   #testReporters: TestReporter[] = []
-  #sessionCapturer = new SessionCapturer()
+  #sessionCapturer: SessionCapturer
   #browser?: WebdriverIO.Browser
   #options: ServiceOptions
   #actionSnapshots: ActionSnapshot[] = []
@@ -111,6 +111,9 @@ export default class DevToolsHookService implements Services.ServiceInstance {
   constructor(serviceOptions: ServiceOptions = {}) {
     assertDevToolsMode(serviceOptions.mode)
     this.#options = serviceOptions
+    this.#sessionCapturer = new SessionCapturer({
+      captureOutput: observesPage(serviceOptions.mode)
+    })
     this.#assertionTracker = new AssertionTracker({
       getCapturer: () => this.#sessionCapturer,
       getBrowser: () => this.#browser,
@@ -250,9 +253,10 @@ export default class DevToolsHookService implements Services.ServiceInstance {
     const wdioCaps = caps as Capabilities.W3CCapabilities & {
       'wdio:devtoolsOptions'?: ServiceOptions
     }
-    this.#sessionCapturer = new SessionCapturer(
-      wdioCaps['wdio:devtoolsOptions']
-    )
+    this.#sessionCapturer = new SessionCapturer({
+      ...wdioCaps['wdio:devtoolsOptions'],
+      captureOutput: observesPage(this.#options.mode)
+    })
     this.#sessionCapturer.traceMode = this.#options.mode ?? 'live'
     // The dashboard window took the front; Safari clicks reach nothing there.
     if (startsBackend(this.#options.mode)) {
@@ -341,7 +345,11 @@ export default class DevToolsHookService implements Services.ServiceInstance {
   async #captureSessionMetadata(browser: WebdriverIO.Browser): Promise<void> {
     try {
       this.#sessionCapturer.mergeMetadata(
-        await resolveSessionMetadata(browser, this.captureType)
+        await resolveSessionMetadata(
+          browser,
+          this.captureType,
+          observesPage(this.#options.mode)
+        )
       )
     } catch (err) {
       log.warn(`Could not capture session metadata: ${errorMessage(err)}`)

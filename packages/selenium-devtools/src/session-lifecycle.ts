@@ -138,9 +138,12 @@ export async function onDriverCreated(
   // Without a backend there's nothing to forward events to — pass an empty
   // opts bag so SessionCapturerBase skips its WS init.
   ctx.sessionCapturer = new SessionCapturer(
-    startsBackend(ctx.options.mode)
-      ? { hostname: ctx.options.hostname, port: ctx.options.port }
-      : {},
+    {
+      ...(startsBackend(ctx.options.mode)
+        ? { hostname: ctx.options.hostname, port: ctx.options.port }
+        : {}),
+      captureOutput: observesPage(ctx.options.mode)
+    },
     driver
   )
   // Dashboard closed AFTER tests finished → wind the runner down so the user

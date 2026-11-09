@@ -35,7 +35,8 @@ import {
   rememberReadValue,
   RetryTracker,
   SessionCapturerBase,
-  type CapturedPerformancePayload
+  type CapturedPerformancePayload,
+  type SessionCapturerOptions
 } from '@wdio/devtools-core'
 import { startsBackend } from '@wdio/devtools-shared'
 import type { DevToolsMode, TraceMutation } from '@wdio/devtools-shared'
@@ -97,7 +98,7 @@ export class SessionCapturer extends SessionCapturerBase {
     }
   >()
 
-  constructor(devtoolsOptions: { hostname?: string; port?: number } = {}) {
+  constructor(devtoolsOptions: SessionCapturerOptions = {}) {
     super(devtoolsOptions)
     this.patchConsole()
     this.patchStreams()

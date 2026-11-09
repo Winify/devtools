@@ -422,7 +422,12 @@ export async function ensureSessionInitialized(
   )
   // Empty opts skip SessionCapturerBase's WS init where no backend exists to forward events to.
   ctx.sessionCapturer = new SessionCapturer(
-    startsBackend(ctx.mode) ? { port: ctx.port, hostname: ctx.hostname } : {},
+    {
+      ...(startsBackend(ctx.mode)
+        ? { port: ctx.port, hostname: ctx.hostname }
+        : {}),
+      captureOutput: observesPage(ctx.mode)
+    },
     browser
   )
   ctx.sessionCapturer.traceMode = ctx.mode
