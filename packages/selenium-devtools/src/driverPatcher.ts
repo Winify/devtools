@@ -537,7 +537,8 @@ export function patchSelenium(hooks: DriverPatcherHooks): boolean {
     WebDriver.prototype as Patchable,
     (cmd) =>
       emitCommand(hooks, { ...cmd, result: safeSerialize(cmd.rawResult) }),
-    WebElementPromise
+    WebElementPromise,
+    () => hooks.observesPage?.() !== false
   )
 
   const tracked = collectMethodNames(WebDriver.prototype).filter(
