@@ -11,7 +11,7 @@ import {
   handleOnCommand
 } from './helpers/commandPostActions.js'
 import { logConfigSummary } from './helpers/configSummary.js'
-import { screencastFor } from './helpers/screencast-options.js'
+import { ScreencastSettings } from './helpers/screencast-options.js'
 import {
   assertDevToolsMode,
   ignoredOptionsWarning,
@@ -68,12 +68,7 @@ import {
 import { SeleniumTestArtifacts } from './test-artifacts.js'
 import { claimMochaRootHooks, tryRegisterRunnerHooks } from './runnerHooks.js'
 import { patchNodeAssert } from './assertPatcher.js'
-import {
-  REUSE_ENV,
-  SCREENCAST_DEFAULTS,
-  TEST_STATE,
-  NAVIGATION_COMMANDS
-} from './constants.js'
+import { REUSE_ENV, TEST_STATE, NAVIGATION_COMMANDS } from './constants.js'
 import {
   type ActionSnapshot,
   type CapturedCommand,
@@ -81,7 +76,6 @@ import {
   type MochaRootHooks,
   type RunnerHookCallbacks,
   type ScreencastFrame,
-  type ScreencastOptions,
   type SeleniumDriverLike,
   type TestStats
 } from './types.js'
@@ -122,7 +116,7 @@ class SeleniumDevToolsPlugin {
   // Coalesce internal retries: same {command,args,src} replaces prior entry.
   #retryTracker = new RetryTracker()
   #screencast?: ScreencastRecorder
-  #screencastOptions: ScreencastOptions
+  #screencastSettings: ScreencastSettings
   #actionSnapshots: ActionSnapshot[] = []
   #snapshotCaptures: Promise<void>[] = []
   #sessionId?: string
@@ -194,8 +188,7 @@ class SeleniumDevToolsPlugin {
     if (options.rerunCommand) {
       this.#rerunManager.configure(options.rerunCommand)
     }
-    this.#screencastOptions = screencastFor(
-      { ...SCREENCAST_DEFAULTS },
+    this.#screencastSettings = new ScreencastSettings(
       options.screencast,
       this.#options.mode
     )
@@ -225,7 +218,7 @@ class SeleniumDevToolsPlugin {
       headless: this.#options.headless,
       captureScreenshots: this.#options.captureScreenshots,
       rerunCommand: this.#options.rerunCommand,
-      screencast: this.#screencastOptions,
+      screencast: this.#screencastSettings.effective,
       rerunManager: this.#rerunManager
     })
   }
@@ -316,11 +309,7 @@ class SeleniumDevToolsPlugin {
     if (ignored) {
       log.warn(ignored)
     }
-    this.#screencastOptions = screencastFor(
-      this.#screencastOptions,
-      opts.screencast,
-      this.#options.mode
-    )
+    this.#screencastSettings.update(opts.screencast, this.#options.mode)
   }
 
   get options() {
@@ -343,7 +332,7 @@ class SeleniumDevToolsPlugin {
         return self.#options
       },
       get screencastOptions() {
-        return self.#screencastOptions
+        return self.#screencastSettings.effective
       },
       get detectedRunner() {
         return DETECTED_RUNNER
@@ -516,7 +505,7 @@ class SeleniumDevToolsPlugin {
       actionSnapshots: this.#actionSnapshots,
       frames: this.#screencast?.frames,
       outcomes: this.#testManager?.lastTestOutcomes() ?? [],
-      captureFormat: this.#screencastOptions.captureFormat,
+      captureFormat: this.#screencastSettings.effective.captureFormat,
       testFilePath: this.#testFilePath,
       onArtifact: (a) => this.#artifacts.push(a),
       onLog: (level, msg) => log[level](msg)

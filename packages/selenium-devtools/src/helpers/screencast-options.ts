@@ -12,3 +12,25 @@ export function screencastFor(
     ? merged
     : { ...merged, enabled: SCREENCAST_DEFAULTS.enabled }
 }
+
+/** The user's options as given, kept apart from the mode, so a later mode change re-derives from them rather than from an already-forced value. */
+export class ScreencastSettings {
+  #input: ScreencastOptions
+  effective: ScreencastOptions
+
+  constructor(
+    user: ScreencastOptions | undefined,
+    mode: DevToolsOptions['mode']
+  ) {
+    this.#input = { ...SCREENCAST_DEFAULTS, ...user }
+    this.effective = screencastFor(this.#input, undefined, mode)
+  }
+
+  update(
+    user: ScreencastOptions | undefined,
+    mode: DevToolsOptions['mode']
+  ): void {
+    this.#input = { ...this.#input, ...user }
+    this.effective = screencastFor(this.#input, undefined, mode)
+  }
+}
