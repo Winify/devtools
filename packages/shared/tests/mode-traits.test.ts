@@ -3,33 +3,12 @@ import {
   assertDevToolsMode,
   capturesTrace,
   forcesManifest,
-  MODE_TRAITS,
   observesPage,
   startsBackend
 } from '../src/mode-traits.js'
 import type { DevToolsMode } from '../src/types.js'
 
 describe('mode traits', () => {
-  it('gives each mode its backend, trace and manifest behaviour', () => {
-    expect(MODE_TRAITS).toEqual({
-      live: {
-        startsBackend: true,
-        capturesTrace: false,
-        forcesManifest: false
-      },
-      trace: {
-        startsBackend: false,
-        capturesTrace: true,
-        forcesManifest: false
-      },
-      telemetry: {
-        startsBackend: false,
-        capturesTrace: false,
-        forcesManifest: true
-      }
-    })
-  })
-
   it('answers forcesManifest from the table', () => {
     expect(forcesManifest('live')).toBe(false)
     expect(forcesManifest('trace')).toBe(false)

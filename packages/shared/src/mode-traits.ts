@@ -1,6 +1,6 @@
 import type { DevToolsMode } from './types.js'
 
-export const MODE_TRAITS: Record<
+const MODE_TRAITS: Record<
   DevToolsMode,
   {
     startsBackend: boolean
