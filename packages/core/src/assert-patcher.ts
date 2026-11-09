@@ -123,13 +123,18 @@ function describeAssertFailure(err: unknown): {
   }
 }
 
+interface AssertEmitters {
+  passed: () => void
+  failed: (err: unknown) => void
+}
+
 function makeAssertEmitters(
   methodName: string,
   args: unknown[],
   onCommand: (cmd: CapturedAssert) => void,
   callerStack: string | undefined,
   resolveAssertTarget?: (args: unknown[]) => string | undefined
-): { passed: () => void; failed: (err: unknown) => void } {
+): AssertEmitters {
   const callInfo = getCallSourceFromStack(callerStack)
   // Drop asserts the user's test didn't fire directly: either no user-code frame
   // on the stack at all, or the assert's immediate caller is a dependency (a
@@ -167,7 +172,7 @@ function makeAssertEmitters(
   }
 }
 
-const NO_EMITTERS = { passed: () => {}, failed: (_err: unknown) => {} }
+const NO_EMITTERS: AssertEmitters = { passed: () => {}, failed: () => {} }
 
 function makePatchedAssertMethod(
   methodName: string,
