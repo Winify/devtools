@@ -8,7 +8,7 @@ devtools-otel push <manifest...> [--artifact-base-url <url>] [--run-id <id>] [--
 
 For every attempt of every test it emits:
 
-- **One trace in Tempo, per attempt.** The attempt is the root span. It carries the trace and span ids the run recorded when the attempt started, so the same manifest pushed twice produces the same spans. The root span also carries the test's name, status, duration, run id and artifact URL as attributes, which the dashboard queries.
+- **One span in Tempo per attempt.** Without `TRACEPARENT` each attempt is the root span of its own trace; when the run was launched under a `TRACEPARENT` (a CI job that propagates one), every attempt is a child of that job's span, so a job's attempts share its trace. The attempt span carries the trace and span ids the run recorded when the attempt started, so the same manifest pushed twice produces the same spans. It also carries the test's name, status, duration, run id and artifact URL as attributes, which the dashboard queries.
 - **Action spans, with `--trace-zips`.** Each action of the final attempt becomes a child span carrying `devtools.action.key` and `devtools.action.index`. The CLI reads the zip only with this flag.
 - **A link to the trace zip in your own bucket.** The zips never go to the OTLP backend. You upload them yourself, and `--artifact-base-url` tells the CLI where they live.
 
@@ -138,7 +138,7 @@ The provisioned dashboard currently filters on `resource.service.name="devtools-
 
 ## Queries
 
-Test results are spans in Tempo, queried with TraceQL. Every attempt is a root span named after the test, with `service.name` `devtools-tests`, but the dashboard's test-level panels count only each test's final attempt, selected by `span.devtools.test.final_attempt = true`, so a retried test counts once and a test that failed then passed is not a failure. The Flaky panel is the one that reads earlier attempts, through `span.devtools.test.attempt`. Spans pushed before this attribute existed carry none, so those panels do not count them. The metrics panels read a 24-hour window at most, and Tempo rejects a longer range for TraceQL metrics.
+Test results are spans in Tempo, queried with TraceQL. Every attempt is a span named after the test, with `service.name` `devtools-tests`: a root span without `TRACEPARENT`, a child of the CI job's span with it. The dashboard's test-level panels count only each test's final attempt, selected by `span.devtools.test.final_attempt = true`, so a retried test counts once and a test that failed then passed is not a failure. The Flaky panel is the one that reads earlier attempts, through `span.devtools.test.attempt`. Spans pushed before this attribute existed carry none, so those panels do not count them. The two trace-list tables, Failing test traces and Test results (latest traces), list traces, so under `TRACEPARENT` each row is a whole CI job named after its root span rather than one test; Replays and the metrics panels select attempt spans by attribute and are unaffected. The metrics panels read a 24-hour window at most, and Tempo rejects a longer range for TraceQL metrics.
 
 Passed tests in the range, from their final attempts:
 
