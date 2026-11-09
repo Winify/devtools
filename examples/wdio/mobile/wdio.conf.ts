@@ -90,10 +90,13 @@ export const config: WebdriverIO.Config = {
   // a prerequisite rather than as "make sure browser driver is running".
   onPrepare: async () => {
     console.log(
-      `devtools mobile: ${MODE} mode` +
-        (MODE === 'live'
-          ? ' — opens the dashboard, writes no trace zip'
-          : ' — writes a trace zip to test-results/, opens no window')
+      `devtools mobile: ${MODE} mode — ` +
+        {
+          live: 'opens the dashboard, writes no trace zip',
+          trace: 'writes a trace zip to test-results/, opens no window',
+          telemetry:
+            'writes only the artifacts manifest to test-results/, no trace zip and no window'
+        }[MODE]
     )
     await requireMobileToolchain()
   },
