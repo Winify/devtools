@@ -500,11 +500,7 @@ export default class DevToolsHookService implements Services.ServiceInstance {
     stampTestState(this.#testMetadata, uid, result, attempt, endTime)
     // Feed the per-attempt ledger so session/spec retention sees this attempt's
     // real outcome, not just the final state that overwrites #testMetadata.
-    this.#attemptTracker.recordOutcome(
-      uid,
-      this.#testMetadata.get(uid)?.state,
-      attempt
-    )
+    this.#attemptTracker.recordOutcome(uid, this.#testMetadata.get(uid)?.state)
   }
 
   async afterScenario(

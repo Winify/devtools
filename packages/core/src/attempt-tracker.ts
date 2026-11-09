@@ -68,14 +68,9 @@ export class TestAttemptTracker implements RetryOutcomeView {
     return attempt
   }
 
-  /** Stamp the resolved state onto uid's most recent attempt slot once the
-   *  outcome is known. `attempt` overrides the slot's number when the adapter
-   *  resolved a more authoritative value (e.g. WDIO's result.retries). */
-  recordOutcome(
-    uid: string,
-    state: TestStatus | undefined,
-    attempt?: number
-  ): void {
+  /** Stamp the resolved state onto uid's most recent attempt slot once the outcome is known. The slot keeps the
+   *  number recordStart gave it, which is the one its trace slice is keyed by. */
+  recordOutcome(uid: string, state: TestStatus | undefined): void {
     const attempts = this.#ledger.get(uid)?.attempts
     const slot = attempts?.[attempts.length - 1]
     if (!slot) {
@@ -83,9 +78,6 @@ export class TestAttemptTracker implements RetryOutcomeView {
     }
     slot.outcome.state = state
     slot.endTime = Date.now()
-    if (attempt !== undefined) {
-      slot.outcome.attempt = attempt
-    }
   }
 
   /** Latest attempt recorded for `uid`, or undefined if it never started. */
