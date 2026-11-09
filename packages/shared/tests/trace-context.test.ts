@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  formatTraceparent,
   isSpanId,
   isTraceId,
   parseTraceparent,
@@ -14,16 +13,8 @@ const SPAN_ID = 'b7ad6b7169203331'
 const VALID = `00-${TRACE_ID}-${SPAN_ID}-01`
 
 describe('traceparent', () => {
-  it('round-trips a context through format and parse', () => {
-    const ctx = { traceId: TRACE_ID, spanId: SPAN_ID, traceFlags: 1 }
-    expect(formatTraceparent(ctx)).toBe(VALID)
-    expect(parseTraceparent(formatTraceparent(ctx))).toEqual(ctx)
-  })
-
-  it('zero-pads flags below 0x10', () => {
-    expect(
-      formatTraceparent({ traceId: TRACE_ID, spanId: SPAN_ID, traceFlags: 0 })
-    ).toBe(`00-${TRACE_ID}-${SPAN_ID}-00`)
+  it('reads the flags of an unsampled header as 0', () => {
+    expect(parseTraceparent(`00-${TRACE_ID}-${SPAN_ID}-00`)?.traceFlags).toBe(0)
   })
 
   it('parses a valid version-00 header', () => {

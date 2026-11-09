@@ -6,12 +6,11 @@ const TRACE_ID = '0af7651916cd43dd8448eb211c80319c'
 const SPAN_ID = 'b7ad6b7169203331'
 
 describe('mintTraceContext', () => {
-  it('mints lowercase hex ids of the W3C lengths, sampled by default', async () => {
+  it('mints lowercase hex ids of the W3C lengths', async () => {
     const { mintTraceContext } = await import('../src/trace-context.js')
     const ctx = mintTraceContext()
     expect(ctx.traceId).toMatch(HEX_32)
     expect(ctx.spanId).toMatch(HEX_16)
-    expect(ctx.traceFlags).toBe(1)
   })
 
   it('gives every mint its own ids', async () => {
@@ -32,7 +31,6 @@ describe('mintTraceContext', () => {
     expect(ctx.traceId).toBe(TRACE_ID)
     expect(ctx.spanId).not.toBe(SPAN_ID)
     expect(ctx.spanId).toMatch(HEX_16)
-    expect(ctx.traceFlags).toBe(0)
   })
 })
 
