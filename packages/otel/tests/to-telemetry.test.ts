@@ -1339,6 +1339,80 @@ describe('pushRun stamped ids', () => {
     expect(await ids()).toEqual(first)
   })
 
+  it('gives every span of a nested-group tree with a polled wait its own id, and the same ids on a re-push', async () => {
+    const before = (
+      callId: string,
+      startTime: number,
+      method: string,
+      parentId?: string
+    ) => ({
+      type: 'before',
+      callId,
+      startTime,
+      class: method === 'tracingGroup' ? 'Tracing' : 'Element',
+      method,
+      pageId: 'p',
+      params: {},
+      title: callId,
+      apiName: method,
+      ...(parentId ? { parentId } : {})
+    })
+    const after = (callId: string, endTime: number) => ({
+      type: 'after',
+      callId,
+      endTime
+    })
+    const events = [
+      contextOptions,
+      before('feature', 1000, 'tracingGroup'),
+      before('scenario', 1010, 'tracingGroup', 'feature'),
+      before('wait', 1020, 'waitForDisplayed', 'scenario'),
+      before('poll-1', 1030, 'isDisplayed', 'wait'),
+      after('poll-1', 1040),
+      before('poll-2', 1050, 'isDisplayed', 'wait'),
+      after('poll-2', 1060),
+      after('wait', 1070),
+      after('scenario', 1080),
+      before('click', 1090, 'click', 'feature'),
+      after('click', 1100),
+      after('feature', 1110)
+    ]
+    const manifest = stampedManifest(
+      [finalRecord(0, 'passed', 'c0ffee0123456789')],
+      {
+        artifacts: [
+          {
+            kind: 'trace',
+            path: 'traces/s1-login.zip',
+            testUids: ['uid-login'],
+            retained: true
+          }
+        ]
+      }
+    )
+    const zips = new Map([[ZIP_PATH, await zipOf(events)]])
+    const ids = async () =>
+      Object.fromEntries(
+        (
+          await push({ manifests: [{ file: MANIFEST_FILE, manifest }], zips })
+        ).spans.map((span) => [span.name, span.spanContext().spanId])
+      )
+    const first = await ids()
+    expect(Object.keys(first).sort()).toEqual(
+      [
+        'click',
+        'feature',
+        'logs in',
+        'poll-1',
+        'poll-2',
+        'scenario',
+        'wait'
+      ].sort()
+    )
+    expect(new Set(Object.values(first)).size).toBe(7)
+    expect(await ids()).toEqual(first)
+  })
+
   it('derives each action span id from its root and ordinal under --trace-zips', async () => {
     const manifest = stampedManifest(
       [finalRecord(0, 'failed', 'c0ffee0123456789')],
