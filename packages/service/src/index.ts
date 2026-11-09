@@ -820,10 +820,7 @@ export default class DevToolsHookService implements Services.ServiceInstance {
     // command discards its collector, else the replay shows empty inputs. Runs
     // in live mode too: navigation drops the old document's collector, so the
     // post-navigation afterCommand drain would hit the fresh page and lose them.
-    if (
-      PAGE_TRANSITION_COMMANDS.includes(command) &&
-      observesPage(this.#options.mode)
-    ) {
+    if (PAGE_TRANSITION_COMMANDS.includes(command)) {
       await this.#sessionCapturer.captureTrace(this.#browser)
     }
     // Pre-action capture: the state this action runs against, which is the state
@@ -929,7 +926,7 @@ export default class DevToolsHookService implements Services.ServiceInstance {
     const settled = this.#commandStack.settle(command, issuedByService)
     if (settled) {
       const { frame, nesting } = settled
-      if (this.#browser && observesPage(this.#options.mode)) {
+      if (this.#browser) {
         const captured = await this.#sessionCapturer.afterCommand(
           this.#browser,
           command,
