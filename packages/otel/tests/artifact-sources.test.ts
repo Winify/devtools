@@ -81,6 +81,14 @@ describe('traceArtifactsByUid', () => {
     expect(linkedPath(manifest)).toBe('traces/login-retry1.zip')
   })
 
+  it('links a spec-scope zip keyed by its spec file', () => {
+    const manifest = manifestOf(
+      [traceZip('traces/login-spec.zip', 'specs/login.spec.ts')],
+      { attempt: 0 }
+    )
+    expect(linkedPath(manifest)).toBe('traces/login-spec.zip')
+  })
+
   it('never links an artifact of another kind with the same uid and key', () => {
     const manifest = manifestOf(
       [
