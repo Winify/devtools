@@ -41,6 +41,15 @@ describe('ScreencastSettings', () => {
     expect(settings.effective).toMatchObject({ enabled: true, quality: 40 })
   })
 
+  it('rejects a write to the options it hands out, which the next update would lose', () => {
+    const settings = new ScreencastSettings({ enabled: true }, 'live')
+    expect(() => {
+      // @ts-expect-error the effective options are read-only
+      settings.effective.enabled = false
+    }).toThrow(TypeError)
+    expect(settings.effective.enabled).toBe(true)
+  })
+
   it('merges each configure call over the earlier input', () => {
     const settings = new ScreencastSettings({ quality: 40 }, 'live')
     settings.update({ pollIntervalMs: 500 }, 'live')
