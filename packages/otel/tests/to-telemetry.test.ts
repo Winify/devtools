@@ -1216,7 +1216,7 @@ describe('pushRun across specFileRetries workers', () => {
             '000000000000aaa1',
             false,
             attr.TEST_CASE_RESULT_STATUS_FAIL,
-            undefined
+            'boom'
           ],
           [
             'bbbbbbbbbbbbbbb2',
@@ -1228,6 +1228,50 @@ describe('pushRun across specFileRetries workers', () => {
       )
       expect(roots).toHaveLength(2)
     }
+  })
+
+  it("links the superseded worker's retained zip from its own root", async () => {
+    const first = worker('s1', 'failed', '000000000000aaa1', TRACE_A, 0)
+    first.artifacts = [
+      {
+        kind: 'trace',
+        path: 'traces/s1-login.zip',
+        key: 'uid-login',
+        testUids: ['uid-login'],
+        retained: true
+      }
+    ]
+    const retry = worker('s2', 'passed', 'bbbbbbbbbbbbbbb2', TRACE_B, 10_000)
+    retry.artifacts = [
+      {
+        kind: 'trace',
+        path: 'traces/s2-login.zip',
+        key: 'uid-login',
+        testUids: ['uid-login'],
+        retained: false
+      }
+    ]
+    const { spans } = await push({
+      manifests: [first, retry].map((manifest) => ({
+        file: path.join(
+          RUN_DIR,
+          `devtools-artifacts-${manifest.sessionId}.json`
+        ),
+        manifest
+      })),
+      traceZips: false,
+      artifactBaseUrl: 'https://bucket.example/run-1'
+    })
+    const urls = Object.fromEntries(
+      rootsNamed(spans, 'logs in').map((root) => [
+        root.spanContext().spanId,
+        root.attributes[attr.ATTR_ARTIFACT_URL]
+      ])
+    )
+    expect(urls).toEqual({
+      '000000000000aaa1': 'https://bucket.example/run-1/traces/s1-login.zip',
+      bbbbbbbbbbbbbbb2: undefined
+    })
   })
 })
 
