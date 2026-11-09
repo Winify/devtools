@@ -1027,12 +1027,14 @@ describe('pushRun unreadable zips', () => {
 })
 
 const TRACE_A = '0af7651916cd43dd8448eb211c80319c'
+const TRACE_B = '4bf92f3577b34da6a3ce929d0e0e4736'
 const PARENT_SPAN = '1111222233334444'
+// Without TRACEPARENT the writer mints each attempt its own trace; a fixture sharing one passes a parent's traceId.
 const attemptRecord = (
   attempt: number,
   state: TestAttemptRecord['state'],
   spanId: string,
-  traceId = TRACE_A
+  traceId = attempt === 0 ? TRACE_A : TRACE_B
 ): TestAttemptRecord => ({
   attempt,
   state,
@@ -1065,7 +1067,7 @@ const rootsNamed = (spans: ReadableSpan[], name: string): ReadableSpan[] =>
   spans.filter((span) => span.name === name)
 
 describe('pushRun stamped ids', () => {
-  it('roots each attempt with the trace and span ids the manifest records', async () => {
+  it('roots each attempt of a run without TRACEPARENT in its own trace with its stamped ids', async () => {
     const manifest = stampedManifest([
       attemptRecord(0, 'failed', '000000000000aaa1'),
       attemptRecord(1, 'failed', 'bbbbbbbbbbbbbbb2')
@@ -1079,12 +1081,23 @@ describe('pushRun stamped ids', () => {
       '000000000000aaa1',
       'bbbbbbbbbbbbbbb2'
     ])
-    expect(roots.every((root) => root.spanContext().traceId === TRACE_A)).toBe(
-      true
-    )
+    expect(roots.map((root) => root.spanContext().traceId)).toEqual([
+      TRACE_A,
+      TRACE_B
+    ])
+    expect(roots.map((root) => root.parentSpanContext)).toEqual([
+      undefined,
+      undefined
+    ])
     expect(
-      roots.map((root) => root.attributes[attr.ATTR_TEST_ATTEMPT])
-    ).toEqual([0, 1])
+      roots.map((root) => [
+        root.attributes[attr.ATTR_TEST_ATTEMPT],
+        root.attributes[attr.ATTR_TEST_FINAL_ATTEMPT]
+      ])
+    ).toEqual([
+      [0, false],
+      [1, true]
+    ])
     expect(roots.map((root) => root.status.code)).toEqual([
       SpanStatusCode.ERROR,
       SpanStatusCode.ERROR
