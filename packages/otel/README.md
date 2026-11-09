@@ -110,7 +110,7 @@ Cucumber steps are not tests: the manifest lists only scenarios, so a step gets 
 
 A root span starts and ends at its attempt's `startTime` and `endTime` in the manifest. A manifest from before attempts existed uses the test's own timing instead: its `startTime`, `endTime` and `durationMs`. Under `--trace-zips`, a root is widened to cover the zip's actions, so every action falls inside its root. A root with no timing at all is zero-width at the manifest file's mtime. The SDK never stamps push time.
 
-Only the WDIO service writes per-test timing (`endTime`, `durationMs`) into the manifest. For a manifest from any other adapter each root is timed from its attempt record, which every adapter writes; a test with neither starts at the manifest file's mtime (`devtools.time_source=manifest-file`).
+Only the WDIO service writes per-test timing (`endTime`, `durationMs`) into the manifest. For a manifest from Selenium or Nightwatch each root is timed from its attempt record, written for every test whose start the adapter saw; a test with neither starts at the manifest file's mtime (`devtools.time_source=manifest-file`). The Python adapter writes no manifest, so a pytest run has nothing to push.
 
 ## Attempts
 
