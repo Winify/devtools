@@ -1112,6 +1112,45 @@ describe('pushRun across specFileRetries workers', () => {
       ]
     })
 
+  const pushWorkers = (manifests: Manifest[]) =>
+    push({
+      manifests: manifests.map((manifest) => ({
+        file: path.join(
+          RUN_DIR,
+          `devtools-artifacts-${manifest.sessionId}.json`
+        ),
+        manifest
+      })),
+      traceZips: false
+    })
+  const finalsBySpan = (spans: ReadableSpan[]) =>
+    Object.fromEntries(
+      rootsNamed(spans, 'logs in').map((root) => [
+        root.spanContext().spanId,
+        root.attributes[attr.ATTR_TEST_FINAL_ATTEMPT]
+      ])
+    )
+
+  it('keeps both finals of overlapping workers, such as two browsers', async () => {
+    const chrome = worker('s1', 'failed', '000000000000aaa1', TRACE_A, 0)
+    const firefox = worker('s2', 'passed', 'bbbbbbbbbbbbbbb2', TRACE_B, 200)
+    const { spans } = await pushWorkers([chrome, firefox])
+    expect(finalsBySpan(spans)).toEqual({
+      '000000000000aaa1': true,
+      bbbbbbbbbbbbbbb2: true
+    })
+  })
+
+  it('keeps a passed final that a later worker ran after', async () => {
+    const first = worker('s1', 'passed', '000000000000aaa1', TRACE_A, 0)
+    const second = worker('s2', 'passed', 'bbbbbbbbbbbbbbb2', TRACE_B, 10_000)
+    const { spans } = await pushWorkers([first, second])
+    expect(finalsBySpan(spans)).toEqual({
+      '000000000000aaa1': true,
+      bbbbbbbbbbbbbbb2: true
+    })
+  })
+
   it("keeps only the later worker's root final", async () => {
     const first = worker('s1', 'failed', '000000000000aaa1', TRACE_A, 0)
     const retry = worker('s2', 'passed', 'bbbbbbbbbbbbbbb2', TRACE_B, 10_000)
