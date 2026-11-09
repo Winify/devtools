@@ -25,10 +25,11 @@ services: [['devtools', {
     mode: 'trace',
     traceGranularity: 'test',
     tracePolicy: 'on',
+    emitArtifactsManifest: true,
 }]]
 ```
 
-The artifacts manifest is emitted by the service in trace mode as `devtools-artifacts-<sessionId>.json` in the output directory. `devtools-otel push` reads these manifests. `mode: 'telemetry'` writes the manifest with no zips, which is enough for the root spans; add `--trace-zips` only when you have zips to read.
+`emitArtifactsManifest: true` is what makes the service write the artifacts manifest, `devtools-artifacts-<sessionId>.json`, in trace mode; without it only an Allure reporter in the config turns it on. The manifest and the trace zips land in `test-results/` under WDIO's `outputDir`, or under its `rootDir` (the config file's directory) when `outputDir` is unset. `devtools-otel push` reads these manifests, so run the commands below from that directory. `mode: 'telemetry'` writes the manifest with no zips, which is enough for the root spans; add `--trace-zips` only when you have zips to read.
 
 ## Retain policies
 
@@ -45,7 +46,7 @@ The artifacts manifest is emitted by the service in trace mode as `devtools-arti
 3. Upload the output directory to the bucket (see the recipes below). Skip this when you only want the telemetry; the replay link and `--trace-zips` need the zips.
 4. Push the telemetry after the run:
    ```sh
-   npx devtools-otel push devtools-output/devtools-artifacts-*.json \
+   npx devtools-otel push test-results/devtools-artifacts-*.json \
      --artifact-base-url http://127.0.0.1:9000/traces/<run-id> --run-id <run-id> --trace-zips
    ```
    `--trace-zips` adds the action spans from the zips you uploaded. Drop it when you did not upload them.
@@ -80,19 +81,19 @@ Whatever the access policy, treat a trace zip as sensitive as the run that produ
 
 ```sh
 AWS_ACCESS_KEY_ID=devtools AWS_SECRET_ACCESS_KEY=devtools-secret \
-  aws --endpoint-url http://127.0.0.1:9000 s3 cp --recursive ./devtools-output/ s3://traces/<run-id>/
+  aws --endpoint-url http://127.0.0.1:9000 s3 cp --recursive ./test-results/ s3://traces/<run-id>/
 ```
 
 **Amazon S3:**
 
 ```sh
-aws s3 cp --recursive ./devtools-output/ s3://<bucket>/<run-id>/
+aws s3 cp --recursive ./test-results/ s3://<bucket>/<run-id>/
 ```
 
 **Google Cloud Storage:**
 
 ```sh
-gcloud storage cp --recursive ./devtools-output/ gs://<bucket>/<run-id>/
+gcloud storage cp --recursive ./test-results/ gs://<bucket>/<run-id>/
 ```
 
 ## GitHub Actions
@@ -112,10 +113,10 @@ jobs:
         run: npx wdio run wdio.conf.ts
       - name: Upload traces
         if: always()
-        run: aws s3 cp --recursive devtools-output/ s3://bucket/${{ github.run_id }}/
+        run: aws s3 cp --recursive test-results/ s3://bucket/${{ github.run_id }}/
       - name: Push telemetry
         if: always()
-        run: npx devtools-otel push devtools-output/devtools-artifacts-*.json --artifact-base-url https://traces.internal.example/${{ github.run_id }}/ --trace-zips
+        run: npx devtools-otel push test-results/devtools-artifacts-*.json --artifact-base-url https://traces.internal.example/${{ github.run_id }}/ --trace-zips
 ```
 
 `--artifact-base-url` must be the internal https address that serves that bucket to your browser (with CORS for `https://player.vibium.dev`, see One-click replay); an `s3://` URL is recorded but cannot be replayed. The upload step needs AWS credentials. Configure them in whatever way your organisation uses, for example `aws-actions/configure-aws-credentials`.
