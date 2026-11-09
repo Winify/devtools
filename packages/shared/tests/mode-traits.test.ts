@@ -3,6 +3,7 @@ import {
   assertDevToolsMode,
   capturesTrace,
   forcesManifest,
+  ignoredOptionsWarning,
   observesPage,
   startsBackend
 } from '../src/mode-traits.js'
@@ -71,5 +72,45 @@ describe('assertDevToolsMode', () => {
     expect(() => assertDevToolsMode('Trace')).toThrow(message('Trace'))
     expect(() => assertDevToolsMode('toString')).toThrow(message('toString'))
     expect(() => assertDevToolsMode(null)).toThrow(message('null'))
+  })
+})
+
+describe('ignoredOptionsWarning', () => {
+  it('names every capture option telemetry drops in one warning', () => {
+    expect(
+      ignoredOptionsWarning(
+        { video: 'on', screencast: { enabled: true } },
+        'telemetry'
+      )
+    ).toBe(
+      'telemetry mode ignores `video` (trace mode only), `screencast.enabled` (live mode only).'
+    )
+  })
+
+  it('names a trace option set in live mode, the default', () => {
+    expect(ignoredOptionsWarning({ tracePolicy: 'retain-on-failure' })).toBe(
+      'live mode ignores `tracePolicy` (trace mode only).'
+    )
+  })
+
+  it('points trace mode at filmstrip and video when screencast.enabled is set', () => {
+    expect(
+      ignoredOptionsWarning({ screencast: { enabled: true } }, 'trace')
+    ).toMatch(
+      /^trace mode ignores `screencast\.enabled` .*`filmstrip` and `video` decide recording/
+    )
+  })
+
+  it('stays silent when every set option applies to the mode', () => {
+    expect(
+      ignoredOptionsWarning(
+        { tracePolicy: 'on', video: 'on', filmstrip: false },
+        'trace'
+      )
+    ).toBeUndefined()
+    expect(
+      ignoredOptionsWarning({ screencast: { enabled: true } }, 'live')
+    ).toBeUndefined()
+    expect(ignoredOptionsWarning({}, 'telemetry')).toBeUndefined()
   })
 })
