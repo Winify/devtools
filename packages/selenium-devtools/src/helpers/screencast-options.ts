@@ -13,7 +13,7 @@ export function screencastFor(
     : { ...merged, enabled: SCREENCAST_DEFAULTS.enabled }
 }
 
-/** The user's options as given, kept apart from the mode, so a later mode change re-derives from them rather than from an already-forced value. */
+/** The user's options as given, kept apart from the mode, so a later mode change re-derives from them rather than from an already-forced value; a recorder copies them when its driver is created, so a change reaches the next driver, not a running recording. */
 export class ScreencastSettings {
   #input: ScreencastOptions
   #effective: Readonly<ScreencastOptions>
