@@ -1295,6 +1295,43 @@ describe('pushRun final attempt marker', () => {
     expect(final?.attributes[attr.ATTR_TEST_ATTEMPT]).toBe(1)
   })
 
+  it('reports each root with its own attempt status', async () => {
+    const { spans } = await push({
+      manifests: [{ file: MANIFEST_FILE, manifest: failThenPass() }],
+      traceZips: false
+    })
+    expect(
+      rootsNamed(spans, 'logs in').map((root) => [
+        root.attributes[attr.ATTR_TEST_ATTEMPT],
+        root.attributes[attr.ATTR_TEST_CASE_RESULT_STATUS]
+      ])
+    ).toEqual([
+      [0, attr.TEST_CASE_RESULT_STATUS_FAIL],
+      [1, attr.TEST_CASE_RESULT_STATUS_PASS]
+    ])
+  })
+
+  // The final root's error message and failed action are read from the test, so its status must be too.
+  it("gives the final root the test's status over its record's", async () => {
+    const manifest = failThenPass()
+    manifest.tests[0].attempts = [
+      attemptRecord(0, 'failed', '000000000000aaa1'),
+      attemptRecord(1, 'failed', 'bbbbbbbbbbbbbbb2')
+    ]
+    const { spans } = await push({
+      manifests: [{ file: MANIFEST_FILE, manifest }],
+      traceZips: false
+    })
+    expect(
+      rootsNamed(spans, 'logs in').map(
+        (root) => root.attributes[attr.ATTR_TEST_CASE_RESULT_STATUS]
+      )
+    ).toEqual([
+      attr.TEST_CASE_RESULT_STATUS_FAIL,
+      attr.TEST_CASE_RESULT_STATUS_PASS
+    ])
+  })
+
   it('marks the record the writer stamped final', async () => {
     const manifest = manifestOf({
       artifacts: [],
